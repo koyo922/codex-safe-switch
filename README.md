@@ -36,14 +36,33 @@ The workflow calls `$HOME/.local/bin/codex-switch`; if `uv tool install` put the
 codex-switch              # interactive picker (↑/↓, enter to switch, q to cancel)
 codex-switch ls           # list profiles, ★ marks the active one
 codex-switch current      # print the active profile
+codex-switch official     # switch back to official OpenAI ChatGPT login
+codex-switch openai       # alias of `official`
 codex-switch use [name]   # load <name>; omit for the picker
 codex-switch save <name>  # snapshot the current ~/.codex state as <name>
 codex-switch show <name>  # print <name>'s provider.toml + auth.json key names
+codex-switch state <name> # show/set the session-state scope for a profile
 codex-switch rm <name>    # delete profile (the active one is protected)
 codex-switch alfred-list  # JSON for Alfred Script Filter
 ```
 
 The picker auto-falls back to a numeric menu when stdin/stdout aren't TTYs (pipes, scripts).
+
+## Official OpenAI shortcut
+
+`codex-switch official` is the one-step way back to the official OpenAI ChatGPT login.
+
+- The tool keeps a hidden `~/.codex/profiles/.official/` snapshot for the official config/auth.
+- The first time you switch away from an official OpenAI session, that snapshot is refreshed automatically.
+- `codex-switch openai` is an alias if you prefer typing the provider name directly.
+
+## Shared history by default
+
+After every `use` / `official` switch, `codex-switch` automatically aligns local Codex history metadata to the active provider identity.
+
+- You no longer need to remember `merge-history` during normal profile switching.
+- This keeps session history visible when moving between relay profiles and the official OpenAI login.
+- `merge-history` still exists as a manual repair command if you want to run it explicitly.
 
 ## Profile format
 
