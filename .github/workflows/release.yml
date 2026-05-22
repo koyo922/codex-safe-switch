@@ -60,9 +60,6 @@ jobs:
     name: Publish distributions to PyPI
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    environment: pypi
 
     steps:
       - name: Download distributions
@@ -74,4 +71,5 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true

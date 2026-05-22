@@ -119,7 +119,7 @@ Or build the files by hand — see `examples/relay-profile/`.
 
 Packages are published on PyPI as [`codex-profile-switcher`](https://pypi.org/project/codex-profile-switcher/).
 
-Automated releases use GitHub Actions and PyPI Trusted Publishing. Configure the PyPI publisher with owner `kadaliao`, repository `codex-profile-switcher`, workflow `release.yml`, and environment `pypi`.
+Automated releases use GitHub Actions with the `PYPI_API_TOKEN` repository secret.
 
 1. Update `version` in `pyproject.toml`.
 2. Run `uv run python -m unittest tests.test_cli` and `uv build`.
