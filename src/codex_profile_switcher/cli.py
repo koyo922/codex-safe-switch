@@ -1153,10 +1153,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    if args.cmd is None:
-        return cmd_pick(args)
-    return args.func(args)
+    try:
+        args = build_parser().parse_args(argv)
+        if args.cmd is None:
+            return cmd_pick(args)
+        return args.func(args)
+    except KeyboardInterrupt:
+        print("codex-switch: interrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import os
@@ -63,6 +63,17 @@ class CodexSwitchCliTests(unittest.TestCase):
         with patch.dict(os.environ, self.env, clear=False), redirect_stdout(buf):
             code = cli.main(list(argv))
         return code, buf.getvalue()
+
+    def run_cli_streams(self, *argv: str) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch.dict(os.environ, self.env, clear=False),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            code = cli.main(list(argv))
+        return code, stdout.getvalue(), stderr.getvalue()
 
     def snapshot_official(self) -> None:
         with patch.dict(os.environ, self.env, clear=False):
@@ -154,6 +165,14 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn("switched → relay", output)
         self.assertIn("restarted Codex processes → 3", output)
         restart.assert_called_once()
+
+    def test_ctrl_c_exits_cleanly_without_traceback(self) -> None:
+        with patch("codex_profile_switcher.cli.cmd_pick", side_effect=KeyboardInterrupt):
+            code, stdout, stderr = self.run_cli_streams()
+
+        self.assertEqual(code, 130)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "codex-switch: interrupted\n")
 
     def test_use_openai_alias_restores_official_snapshot_and_merges_history(self) -> None:
         self.set_current_official()
