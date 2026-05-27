@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -412,6 +413,100 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn("planned history alignment →", output)
         self.assertIn("rollout metadata drift → no", output)
         self.assertIn("provider/model drift → yes", output)
+
+    def test_use_warns_when_managed_standalone_codex_is_missing(self) -> None:
+        self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text('model_provider = "relay"\n')
+        missing = self.codex_home / "packages" / "standalone" / "current" / "codex"
+        version = {
+            "status": "running",
+            "managedCodexPath": str(missing),
+            "managedCodexVersion": None,
+            "cliVersion": "0.134.0",
+            "appServerVersion": "0.134.0",
+        }
+
+        with patch("codex_profile_switcher.cli.shutil.which", return_value="/usr/local/bin/codex"), patch(
+            "codex_profile_switcher.cli.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                ["codex", "app-server", "daemon", "version"],
+                0,
+                stdout=json.dumps(version),
+                stderr="",
+            ),
+        ):
+            _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("switched → relay", output)
+        self.assertIn("remote-control warning → managed standalone Codex missing", output)
+        self.assertIn("curl -fsSL https://chatgpt.com/codex/install.sh | sh", output)
+
+    def test_use_repairs_unmanaged_app_server_and_retries_remote_control(self) -> None:
+        self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text('model_provider = "relay"\n')
+        managed = self.codex_home / "packages" / "standalone" / "current" / "codex"
+        managed.parent.mkdir(parents=True)
+        managed.write_text("#!/bin/sh\n")
+        version = {
+            "status": "running",
+            "managedCodexPath": str(managed),
+            "managedCodexVersion": "0.134.0",
+            "cliVersion": "0.134.0",
+            "appServerVersion": "0.134.0",
+        }
+        ps_output = "\n".join(
+            [
+                "201 /usr/local/bin/codex app-server --listen unix://",
+                "202 /usr/local/bin/codex app-server proxy --listen unix://",
+                "203 /Applications/Codex.app/Contents/MacOS/Codex",
+                "",
+            ]
+        )
+        remote_error = "Error: app server is running but is not managed by codex app-server daemon"
+        calls = [
+            subprocess.CompletedProcess(
+                ["codex", "app-server", "daemon", "version"],
+                0,
+                stdout=json.dumps(version),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ["codex", "remote-control", "start", "--json"],
+                1,
+                stdout="",
+                stderr=remote_error,
+            ),
+            subprocess.CompletedProcess(
+                ["codex", "remote-control", "start", "--json"],
+                0,
+                stdout='{"status":"running"}',
+                stderr="",
+            ),
+        ]
+
+        with patch("codex_profile_switcher.cli.shutil.which", return_value="/usr/local/bin/codex"), patch(
+            "codex_profile_switcher.cli.subprocess.run", side_effect=calls
+        ) as run, patch("codex_profile_switcher.cli._ps_output", return_value=ps_output), patch(
+            "codex_profile_switcher.cli._pid_exists", return_value=False
+        ), patch("codex_profile_switcher.cli.os.kill") as kill:
+            _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("remote-control repaired → restarted managed app-server", output)
+        self.assertEqual([call.args[0] for call in kill.call_args_list], [201, 202])
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            [
+                ["codex", "app-server", "daemon", "version"],
+                ["codex", "remote-control", "start", "--json"],
+                ["codex", "remote-control", "start", "--json"],
+            ],
+        )
 
 
 if __name__ == "__main__":

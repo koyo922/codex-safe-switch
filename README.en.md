@@ -102,6 +102,7 @@ After every `use` / `official` switch, `codex-switch` automatically aligns local
 
 - You no longer need to remember `merge-history` during normal profile switching.
 - This keeps session history visible when moving between relay profiles and the official OpenAI login, including surfaces that filter by model id.
+- If this host has used Codex remote-control before, the switch also checks the managed app-server path that desktop/mobile remote access depends on. It retries through the managed daemon when an old unmanaged unix app-server owns the socket, and prints the official standalone install command when that managed install is missing.
 - `merge-history --keep-models` still exists if you want a provider-only repair and need to preserve historical per-thread model ids.
 - `merge-history --dry-run` reports rollout files/lines, SQLite rows, and the backup path it would create without writing anything.
 - `doctor-history` is read-only and summarizes the active profile, current provider/model, session-state mode, SQLite `threads` distribution, recent threads, planned alignment counts, and provider/model drift.
@@ -131,6 +132,8 @@ The following top-level keys + tables are owned by a profile (swapped on `use`);
 2. For a relay whose key comes from the environment, prefer `requires_openai_auth = false` plus `env_key = "..."`. That profile does not need `auth.json`; switching to it preserves the current official ChatGPT login cache so Codex remote connections can keep using the same ChatGPT account.
 3. `codex-switch save <name>` — snapshots the provider slice into a new profile. It only stores `auth.json` when the provider explicitly needs OpenAI/ChatGPT auth, or for legacy API-key configs that do not declare `requires_openai_auth = false`.
 4. `cx` in Alfred (or `codex-switch use <name>`) to switch anytime.
+
+`requires_openai_auth = false` only means the relay profile does not own `auth.json`. Mobile history sync still depends on a healthy official Codex remote-control/app-server install; copying tokens into each profile is not the durable fix.
 
 Or build the files by hand — see `examples/relay-profile/`.
 

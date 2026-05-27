@@ -47,6 +47,8 @@ OFFICIAL_PROFILE_NAME = "official"
 OFFICIAL_PROFILE_DIRNAME = ".official"
 OFFICIAL_ALIASES = {OFFICIAL_PROFILE_NAME, "openai"}
 ALFRED_INIT_ARG = "__init__"
+REMOTE_CONTROL_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+REMOTE_CONTROL_REPAIR_ENV = "CODEX_SWITCH_REMOTE_REPAIR"
 
 
 @dataclass(frozen=True)
@@ -289,6 +291,187 @@ def restart_codex_processes() -> int:
         except ProcessLookupError:
             pass
     return len(pids)
+
+
+def _looks_like_unmanaged_app_server(pid: int, args: str) -> bool:
+    if pid == os.getpid():
+        return False
+    lower = args.lower()
+    if "codex-switch" in lower or "codex_profile_switcher" in lower:
+        return False
+    if "--listen unix://" not in lower:
+        return False
+    parts = args.split(maxsplit=1)
+    executable = Path(parts[0]).name.lower() if parts else ""
+    rest = parts[1].lower() if len(parts) == 2 else ""
+    return executable == "codex" and rest.startswith("app-server")
+
+
+def find_unmanaged_app_server_processes() -> list[int]:
+    pids: list[int] = []
+    for line in _ps_output().splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        if _looks_like_unmanaged_app_server(pid, parts[1]):
+            pids.append(pid)
+    return pids
+
+
+def stop_unmanaged_app_server_processes() -> int:
+    pids = find_unmanaged_app_server_processes()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.monotonic() + 1.5
+    while time.monotonic() < deadline and any(_pid_exists(pid) for pid in pids):
+        time.sleep(0.05)
+
+    for pid in pids:
+        if not _pid_exists(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return len(pids)
+
+
+def _custom_codex_home_is_active(codex: Path) -> bool:
+    configured = os.environ.get("CODEX_HOME")
+    if not configured:
+        return False
+    try:
+        return Path(configured).expanduser().resolve() != (Path.home() / ".codex").resolve()
+    except OSError:
+        return Path(configured).expanduser() != Path.home() / ".codex"
+
+
+def remote_control_repair_allowed(codex: Path) -> bool:
+    override = os.environ.get(REMOTE_CONTROL_REPAIR_ENV)
+    if override is not None:
+        return override.strip().lower() not in {"0", "false", "no", "off"}
+    return not _custom_codex_home_is_active(codex) and has_remote_control_enrollment(codex)
+
+
+def has_remote_control_enrollment(codex: Path) -> bool:
+    state_db = codex / "state_5.sqlite"
+    if not state_db.exists():
+        return False
+    try:
+        conn = connect_sqlite_readonly(state_db)
+    except sqlite3.Error:
+        return False
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'remote_control_enrollments'"
+        ).fetchone()
+        if not exists:
+            return False
+        row = conn.execute("SELECT COUNT(*) FROM remote_control_enrollments").fetchone()
+        return bool(row and int(row[0]) > 0)
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def _run_codex_command(args: list[str]) -> Optional[subprocess.CompletedProcess[str]]:
+    if shutil.which("codex") is None:
+        return None
+    try:
+        return subprocess.run(
+            ["codex", *args],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError:
+        return None
+
+
+def _combined_output(result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join(part for part in (result.stdout, result.stderr) if part)
+
+
+def _load_daemon_version(codex: Path) -> dict:
+    result = _run_codex_command(["app-server", "daemon", "version"])
+    if result is None:
+        return {}
+    if not result.stdout.strip():
+        return {}
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _managed_standalone_path(codex: Path, daemon_version: dict) -> Path:
+    raw = daemon_version.get("managedCodexPath")
+    if raw:
+        return Path(str(raw)).expanduser()
+    return codex / "packages" / "standalone" / "current" / "codex"
+
+
+def _remote_control_needs_standalone_install(text: str) -> bool:
+    lower = text.lower()
+    return "managed standalone codex install not found" in lower
+
+
+def _remote_control_is_unmanaged(text: str) -> bool:
+    lower = text.lower()
+    return (
+        "not managed by codex app-server daemon" in lower
+        or "unmanaged" in lower and "app-server" in lower
+    )
+
+
+def _print_missing_standalone_warning(path: Path) -> None:
+    print(f"remote-control warning → managed standalone Codex missing at {path}")
+    print(f"remote-control install → {REMOTE_CONTROL_INSTALL_COMMAND}")
+
+
+def maybe_repair_remote_control(codex: Path) -> None:
+    if not remote_control_repair_allowed(codex):
+        return
+
+    daemon_version = _load_daemon_version(codex)
+    managed_path = _managed_standalone_path(codex, daemon_version)
+    if not managed_path.is_file():
+        _print_missing_standalone_warning(managed_path)
+        return
+
+    first = _run_codex_command(["remote-control", "start", "--json"])
+    if first is None or first.returncode == 0:
+        return
+
+    first_output = _combined_output(first)
+    if _remote_control_needs_standalone_install(first_output):
+        _print_missing_standalone_warning(managed_path)
+        return
+    if not _remote_control_is_unmanaged(first_output):
+        return
+
+    stopped = stop_unmanaged_app_server_processes()
+    retry = _run_codex_command(["remote-control", "start", "--json"])
+    if retry is not None and retry.returncode == 0:
+        print(f"remote-control repaired → restarted managed app-server (stopped {stopped})")
+        return
+
+    retry_output = _combined_output(retry) if retry is not None else first_output
+    if _remote_control_needs_standalone_install(retry_output):
+        _print_missing_standalone_warning(managed_path)
+    else:
+        print("remote-control warning → could not repair managed app-server automatically")
 
 
 def _atomic_write_copy(src: Path, dst: Path) -> None:
@@ -796,6 +979,7 @@ def switch_to_profile(name: str, *, restart_codex: bool = False) -> int:
     active_file().write_text(normalized_name + "\n")
     print(f"switched → {normalized_name}")
     maybe_auto_merge_history(codex)
+    maybe_repair_remote_control(codex)
     if restart_codex:
         count = restart_codex_processes()
         print(f"restarted Codex processes → {count}")
