@@ -51,6 +51,7 @@ REMOTE_CONTROL_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.s
 REMOTE_CONTROL_REPAIR_ENV = "CODEX_SWITCH_REMOTE_REPAIR"
 CLI_SURFACE_CHECK_ENV = "CODEX_SWITCH_CLI_SURFACE_CHECK"
 DESKTOP_CODEX_PATH_ENV = "CODEX_DESKTOP_CODEX_PATH"
+REMOTE_PROXY_RESPAWN_GRACE_SECONDS = 1.5
 GLOBAL_STATE_FILES = (".codex-global-state.json", ".codex-global-state.json.bak")
 REMOTE_HOST_PREFIX = "remote-ssh-"
 ELECTRON_REMOTE_STATE_KEYS = (
@@ -339,8 +340,7 @@ def find_unmanaged_app_server_processes() -> list[int]:
     return pids
 
 
-def stop_unmanaged_app_server_processes() -> int:
-    pids = find_unmanaged_app_server_processes()
+def _terminate_processes(pids: list[int]) -> set[int]:
     for pid in pids:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -358,7 +358,11 @@ def stop_unmanaged_app_server_processes() -> int:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-    return len(pids)
+    return set(pids)
+
+
+def stop_unmanaged_app_server_processes() -> set[int]:
+    return _terminate_processes(find_unmanaged_app_server_processes())
 
 
 def _looks_like_remote_proxy_process(pid: int, args: str) -> bool:
@@ -388,6 +392,12 @@ def find_remote_proxy_processes() -> list[int]:
         if _looks_like_remote_proxy_process(pid, parts[1]):
             pids.append(pid)
     return pids
+
+
+def stop_remote_proxy_processes(*, exclude: Optional[set[int]] = None) -> set[int]:
+    ignored = exclude or set()
+    pids = [pid for pid in find_remote_proxy_processes() if pid not in ignored]
+    return _terminate_processes(pids)
 
 
 def _custom_codex_home_is_active(codex: Path) -> bool:
@@ -649,56 +659,62 @@ def maybe_repair_remote_selection_state(codex: Path) -> None:
         print(f"remote selection repaired → {changed_files} files")
 
 
-def maybe_repair_remote_control(codex: Path) -> None:
+def maybe_repair_remote_control(codex: Path) -> set[int]:
     if not remote_control_repair_allowed(codex):
-        return
+        return set()
 
     daemon_version = _load_daemon_version(codex)
     maybe_warn_cli_surface_mismatch(codex, daemon_version)
     managed_path = _managed_standalone_path(codex, daemon_version)
     if not managed_path.is_file():
         _print_missing_standalone_warning(managed_path)
-        return
+        return set()
 
     first = _run_codex_command(["remote-control", "start", "--json"])
     if first is None:
-        return
+        return set()
     pending = _remote_control_pending_description(first)
     if pending:
         print(f"remote-control warning → daemon still connecting ({pending})")
-        return
+        return set()
     if first.returncode == 0:
-        return
+        return set()
 
     first_output = _combined_output(first)
     if _remote_control_needs_standalone_install(first_output):
         _print_missing_standalone_warning(managed_path)
-        return
+        return set()
     if not _remote_control_is_unmanaged(first_output):
-        return
+        return set()
 
     stopped = stop_unmanaged_app_server_processes()
     retry = _run_codex_command(["remote-control", "start", "--json"])
     if retry is not None and retry.returncode == 0:
-        print(f"remote-control repaired → restarted managed app-server (stopped {stopped})")
-        return
+        print(f"remote-control repaired → restarted managed app-server (stopped {len(stopped)})")
+        return stopped
 
     retry_output = _combined_output(retry) if retry is not None else first_output
     if _remote_control_needs_standalone_install(retry_output):
         _print_missing_standalone_warning(managed_path)
     else:
         print("remote-control warning → could not repair managed app-server automatically")
+    return stopped
 
 
-def maybe_warn_remote_proxy_processes(codex: Path) -> None:
+def maybe_stop_remote_proxy_processes(codex: Path, *, exclude: Optional[set[int]] = None) -> None:
     if not remote_control_repair_allowed(codex):
         return
-    pids = find_remote_proxy_processes()
-    if not pids:
+    stopped = stop_remote_proxy_processes(exclude=exclude)
+    if not stopped:
         return
-    joined = ", ".join(str(pid) for pid in pids)
-    print(f"remote-control warning → {len(pids)} remote proxy processes still running (pids: {joined})")
-    print("remote-control hint → restart Codex Desktop or rerun with --restart-codex to drop stale in-memory remote state")
+    print(f"remote-control repaired → stopped stale remote proxy processes (stopped {len(stopped)})")
+    print("remote-control hint → restart Codex Desktop if old remote proxy processes reappear")
+    time.sleep(REMOTE_PROXY_RESPAWN_GRACE_SECONDS)
+    remaining = [pid for pid in find_remote_proxy_processes() if pid not in stopped]
+    if remaining:
+        joined = ", ".join(str(pid) for pid in remaining)
+        print(f"remote-control warning → Desktop respawned remote proxy processes (pids: {joined})")
+        print("remote-control hint → restart Codex Desktop to drop stale in-memory remote state")
 
 
 def _atomic_write_copy(src: Path, dst: Path) -> None:
@@ -1329,12 +1345,12 @@ def switch_to_profile(name: str, *, restart_codex: bool = False) -> int:
     maybe_auto_merge_history(codex)
     maybe_repair_session_index(codex)
     maybe_repair_remote_selection_state(codex)
-    maybe_repair_remote_control(codex)
+    stopped_runtime = maybe_repair_remote_control(codex)
     if restart_codex:
         count = restart_codex_processes()
         print(f"restarted Codex processes → {count}")
     else:
-        maybe_warn_remote_proxy_processes(codex)
+        maybe_stop_remote_proxy_processes(codex, exclude=stopped_runtime)
     return 0
 
 
