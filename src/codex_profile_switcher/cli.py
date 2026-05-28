@@ -49,6 +49,8 @@ OFFICIAL_ALIASES = {OFFICIAL_PROFILE_NAME, "openai"}
 ALFRED_INIT_ARG = "__init__"
 REMOTE_CONTROL_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
 REMOTE_CONTROL_REPAIR_ENV = "CODEX_SWITCH_REMOTE_REPAIR"
+CLI_SURFACE_CHECK_ENV = "CODEX_SWITCH_CLI_SURFACE_CHECK"
+DESKTOP_CODEX_PATH_ENV = "CODEX_DESKTOP_CODEX_PATH"
 GLOBAL_STATE_FILES = (".codex-global-state.json", ".codex-global-state.json.bak")
 REMOTE_HOST_PREFIX = "remote-ssh-"
 ELECTRON_REMOTE_STATE_KEYS = (
@@ -80,6 +82,13 @@ class MergeHistoryResult:
     changed_lines: int
     state_rows: int
     backup_dir: Optional[Path]
+
+
+@dataclass(frozen=True)
+class CodexCliSurface:
+    label: str
+    version: str
+    path: Optional[Path]
 
 
 def profile_root() -> Path:
@@ -251,6 +260,8 @@ def _looks_like_codex_process(pid: int, args: str) -> bool:
     lower = args.lower()
     if "codex-switch" in lower or "codex_profile_switcher" in lower:
         return False
+    if _looks_like_remote_proxy_process(pid, args):
+        return True
     executable = Path(args.split(maxsplit=1)[0]).name.lower() if args.strip() else ""
     if executable in {"codex", "codex-app-server", "codex-server"}:
         return True
@@ -350,6 +361,35 @@ def stop_unmanaged_app_server_processes() -> int:
     return len(pids)
 
 
+def _looks_like_remote_proxy_process(pid: int, args: str) -> bool:
+    if pid == os.getpid():
+        return False
+    lower = args.lower()
+    if "codex-switch" in lower or "codex_profile_switcher" in lower:
+        return False
+    if "codex app-server proxy" in lower:
+        return True
+    parts = args.split(maxsplit=1)
+    executable = Path(parts[0]).name.lower() if parts else ""
+    rest = parts[1].lower() if len(parts) == 2 else ""
+    return executable == "codex" and rest.startswith("app-server proxy")
+
+
+def find_remote_proxy_processes() -> list[int]:
+    pids: list[int] = []
+    for line in _ps_output().splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        if _looks_like_remote_proxy_process(pid, parts[1]):
+            pids.append(pid)
+    return pids
+
+
 def _custom_codex_home_is_active(codex: Path) -> bool:
     configured = os.environ.get("CODEX_HOME")
     if not configured:
@@ -360,11 +400,25 @@ def _custom_codex_home_is_active(codex: Path) -> bool:
         return Path(configured).expanduser() != Path.home() / ".codex"
 
 
+def _env_bool(name: str) -> Optional[bool]:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def remote_control_repair_allowed(codex: Path) -> bool:
-    override = os.environ.get(REMOTE_CONTROL_REPAIR_ENV)
+    override = _env_bool(REMOTE_CONTROL_REPAIR_ENV)
     if override is not None:
-        return override.strip().lower() not in {"0", "false", "no", "off"}
+        return override
     return not _custom_codex_home_is_active(codex) and has_remote_control_enrollment(codex)
+
+
+def cli_surface_check_allowed(codex: Path) -> bool:
+    override = _env_bool(CLI_SURFACE_CHECK_ENV)
+    if override is not None:
+        return override
+    return not _custom_codex_home_is_active(codex) and remote_control_repair_allowed(codex)
 
 
 def has_remote_control_enrollment(codex: Path) -> bool:
@@ -426,6 +480,73 @@ def _managed_standalone_path(codex: Path, daemon_version: dict) -> Path:
     if raw:
         return Path(str(raw)).expanduser()
     return codex / "packages" / "standalone" / "current" / "codex"
+
+
+def _desktop_bundled_codex_path() -> Path:
+    raw = os.environ.get(DESKTOP_CODEX_PATH_ENV)
+    if raw:
+        return Path(raw).expanduser()
+    return Path("/Applications/Codex.app/Contents/Resources/codex")
+
+
+def _normalize_codex_version(value: object) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for token in text.replace("\n", " ").split():
+        cleaned = token.strip(" \t,;()[]")
+        if cleaned and cleaned[0].isdigit():
+            return cleaned
+    return text
+
+
+def _run_codex_version(executable: Path) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            [str(executable), "--version"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    output = result.stdout.strip() or result.stderr.strip()
+    if result.returncode != 0 and not output:
+        return None
+    return _normalize_codex_version(output)
+
+
+def maybe_warn_cli_surface_mismatch(codex: Path, daemon_version: dict) -> None:
+    if not cli_surface_check_allowed(codex):
+        return
+
+    surfaces: list[CodexCliSurface] = []
+    shell_path = shutil.which("codex")
+    shell_version = _normalize_codex_version(daemon_version.get("cliVersion"))
+    if shell_path and shell_version:
+        surfaces.append(CodexCliSurface("shell codex", shell_version, Path(shell_path)))
+
+    managed_path = _managed_standalone_path(codex, daemon_version)
+    managed_version = _normalize_codex_version(daemon_version.get("managedCodexVersion"))
+    if managed_path.is_file() and managed_version:
+        surfaces.append(CodexCliSurface("managed standalone", managed_version, managed_path))
+
+    desktop_path = _desktop_bundled_codex_path()
+    if desktop_path.is_file():
+        desktop_version = _run_codex_version(desktop_path)
+        if desktop_version:
+            surfaces.append(CodexCliSurface("Desktop bundled", desktop_version, desktop_path))
+
+    versions = {surface.version for surface in surfaces}
+    if len(versions) <= 1:
+        return
+
+    print("codex cli warning → multiple Codex CLI versions are active")
+    for surface in surfaces:
+        path = f" ({surface.path})" if surface.path is not None else ""
+        print(f"  {surface.label}: {surface.version}{path}")
+    print("codex cli note → Desktop app owns its bundled CLI; update/restart Codex.app instead of overwriting the app bundle")
 
 
 def _remote_control_needs_standalone_install(text: str) -> bool:
@@ -533,6 +654,7 @@ def maybe_repair_remote_control(codex: Path) -> None:
         return
 
     daemon_version = _load_daemon_version(codex)
+    maybe_warn_cli_surface_mismatch(codex, daemon_version)
     managed_path = _managed_standalone_path(codex, daemon_version)
     if not managed_path.is_file():
         _print_missing_standalone_warning(managed_path)
@@ -566,6 +688,17 @@ def maybe_repair_remote_control(codex: Path) -> None:
         _print_missing_standalone_warning(managed_path)
     else:
         print("remote-control warning → could not repair managed app-server automatically")
+
+
+def maybe_warn_remote_proxy_processes(codex: Path) -> None:
+    if not remote_control_repair_allowed(codex):
+        return
+    pids = find_remote_proxy_processes()
+    if not pids:
+        return
+    joined = ", ".join(str(pid) for pid in pids)
+    print(f"remote-control warning → {len(pids)} remote proxy processes still running (pids: {joined})")
+    print("remote-control hint → restart Codex Desktop or rerun with --restart-codex to drop stale in-memory remote state")
 
 
 def _atomic_write_copy(src: Path, dst: Path) -> None:
@@ -1200,6 +1333,8 @@ def switch_to_profile(name: str, *, restart_codex: bool = False) -> int:
     if restart_codex:
         count = restart_codex_processes()
         print(f"restarted Codex processes → {count}")
+    else:
+        maybe_warn_remote_proxy_processes(codex)
     return 0
 
 

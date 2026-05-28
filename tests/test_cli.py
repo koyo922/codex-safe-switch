@@ -622,11 +622,129 @@ class CodexSwitchCliTests(unittest.TestCase):
                     stderr="",
                 ),
             ],
-        ):
+        ), patch("codex_profile_switcher.cli._ps_output", return_value=""):
             _code, output = self.run_cli_output("use", "relay")
 
         self.assertIn("remote-control warning → daemon still connecting", output)
         self.assertIn("environment=env_new", output)
+
+    def test_use_warns_when_desktop_bundled_cli_version_differs(self) -> None:
+        self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"
+        self.env[cli.CLI_SURFACE_CHECK_ENV] = "1"
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text('model_provider = "relay"\n')
+        managed = self.codex_home / "packages" / "standalone" / "current" / "codex"
+        managed.parent.mkdir(parents=True)
+        managed.write_text("#!/bin/sh\n")
+        desktop = self.tmp / "Codex.app" / "Contents" / "Resources" / "codex"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("#!/bin/sh\n")
+        self.env["CODEX_DESKTOP_CODEX_PATH"] = str(desktop)
+        version = {
+            "status": "running",
+            "managedCodexPath": str(managed),
+            "managedCodexVersion": "0.134.0",
+            "cliVersion": "0.134.0",
+            "appServerVersion": "0.134.0",
+        }
+
+        with patch("codex_profile_switcher.cli.shutil.which", return_value="/usr/local/bin/codex"), patch(
+            "codex_profile_switcher.cli.subprocess.run",
+            side_effect=[
+                subprocess.CompletedProcess(
+                    ["codex", "app-server", "daemon", "version"],
+                    0,
+                    stdout=json.dumps(version),
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    [str(desktop), "--version"],
+                    0,
+                    stdout="codex-cli 0.133.0\n",
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    ["codex", "remote-control", "start", "--json"],
+                    0,
+                    stdout='{"status":"connected"}',
+                    stderr="",
+                ),
+            ],
+        ), patch("codex_profile_switcher.cli._ps_output", return_value=""):
+            _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("codex cli warning → multiple Codex CLI versions are active", output)
+        self.assertIn("shell codex: 0.134.0 (/usr/local/bin/codex)", output)
+        self.assertIn(f"managed standalone: 0.134.0 ({managed})", output)
+        self.assertIn(f"Desktop bundled: 0.133.0 ({desktop})", output)
+        self.assertIn("Desktop app owns its bundled CLI", output)
+
+    def test_use_warns_when_remote_proxy_processes_keep_old_connection_running(self) -> None:
+        self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text('model_provider = "relay"\n')
+        managed = self.codex_home / "packages" / "standalone" / "current" / "codex"
+        managed.parent.mkdir(parents=True)
+        managed.write_text("#!/bin/sh\n")
+        version = {
+            "status": "running",
+            "managedCodexPath": str(managed),
+            "managedCodexVersion": "0.134.0",
+        }
+        ps_output = "\n".join(
+            [
+                "301 ssh -T mm sh -c 'codex app-server proxy'",
+                "302 /bin/sh -c codex app-server proxy",
+                "303 codex app-server proxy",
+                "304 ssh -T other.example uptime",
+                "",
+            ]
+        )
+
+        with patch("codex_profile_switcher.cli.shutil.which", return_value="/usr/local/bin/codex"), patch(
+            "codex_profile_switcher.cli.subprocess.run",
+            side_effect=[
+                subprocess.CompletedProcess(
+                    ["codex", "app-server", "daemon", "version"],
+                    0,
+                    stdout=json.dumps(version),
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    ["codex", "remote-control", "start", "--json"],
+                    0,
+                    stdout='{"status":"connected"}',
+                    stderr="",
+                ),
+            ],
+        ), patch("codex_profile_switcher.cli._ps_output", return_value=ps_output):
+            _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("remote-control warning → 3 remote proxy processes still running", output)
+        self.assertIn("restart Codex Desktop or rerun with --restart-codex", output)
+
+    def test_restart_codex_stops_remote_proxy_process_chain(self) -> None:
+        ps_output = "\n".join(
+            [
+                "301 ssh -T mm sh -c 'codex app-server proxy'",
+                "302 /bin/sh -c codex app-server proxy",
+                "303 codex app-server proxy",
+                "304 ssh -T other.example uptime",
+                "",
+            ]
+        )
+
+        with patch("codex_profile_switcher.cli._ps_output", return_value=ps_output), patch(
+            "codex_profile_switcher.cli._pid_exists", return_value=False
+        ), patch("codex_profile_switcher.cli.os.kill") as kill:
+            _code, output = self.run_cli_output("restart-codex")
+
+        self.assertIn("restarted Codex processes → 3", output)
+        self.assertEqual([call.args[0] for call in kill.call_args_list], [301, 302, 303])
 
     def test_use_repairs_stale_session_index_from_sqlite_threads(self) -> None:
         self.set_current_official()
