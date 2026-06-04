@@ -92,6 +92,14 @@ class CodexCliSurface:
     path: Optional[Path]
 
 
+@dataclass(frozen=True)
+class SessionIndexThreadState:
+    latest_ms: int = 0
+    latest_name: Optional[str] = None
+    best_name: Optional[str] = None
+    best_name_ms: int = 0
+
+
 def profile_root() -> Path:
     return Path(os.environ.get("CODEX_PROFILE_ROOT") or Path.home() / ".codex" / "profiles")
 
@@ -1187,10 +1195,24 @@ def _format_index_timestamp(updated_at: object, updated_at_ms: object) -> str:
     return datetime.fromtimestamp(millis / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _read_session_index_latest(path: Path) -> dict[str, int]:
-    latest: dict[str, int] = {}
+def _looks_like_prompt_title(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    lower = text.lower()
+    return lower.startswith("<aside") or "<aside" in lower[:120] or (len(text) > 160 and "\n" in text)
+
+
+def _looks_like_human_title(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and not _looks_like_prompt_title(value)
+
+
+def _read_session_index_state(path: Path) -> dict[str, SessionIndexThreadState]:
+    state: dict[str, SessionIndexThreadState] = {}
     if not path.exists():
-        return latest
+        return state
     with path.open() as fh:
         for raw in fh:
             try:
@@ -1202,8 +1224,30 @@ def _read_session_index_latest(path: Path) -> dict[str, int]:
             thread_id = item.get("id")
             if not isinstance(thread_id, str) or not thread_id:
                 continue
-            latest[thread_id] = max(latest.get(thread_id, 0), _parse_index_timestamp_ms(item.get("updated_at")))
-    return latest
+            timestamp_ms = _parse_index_timestamp_ms(item.get("updated_at"))
+            name = item.get("thread_name")
+            current = state.get(thread_id, SessionIndexThreadState())
+            latest_ms = current.latest_ms
+            latest_name = current.latest_name
+            if timestamp_ms >= latest_ms:
+                latest_ms = timestamp_ms
+                latest_name = str(name) if isinstance(name, str) else None
+            best_name = current.best_name
+            best_name_ms = current.best_name_ms
+            if _looks_like_human_title(name) and timestamp_ms >= best_name_ms:
+                best_name = str(name).strip()
+                best_name_ms = timestamp_ms
+            state[thread_id] = SessionIndexThreadState(
+                latest_ms=latest_ms,
+                latest_name=latest_name,
+                best_name=best_name,
+                best_name_ms=best_name_ms,
+            )
+    return state
+
+
+def _read_session_index_latest(path: Path) -> dict[str, int]:
+    return {thread_id: item.latest_ms for thread_id, item in _read_session_index_state(path).items()}
 
 
 def _session_index_thread_columns(conn: sqlite3.Connection) -> list[str]:
@@ -1212,6 +1256,63 @@ def _session_index_thread_columns(conn: sqlite3.Connection) -> list[str]:
     if not needed.issubset(set(columns)):
         return []
     return columns
+
+
+def repair_prompt_like_thread_titles_from_index(
+    codex: Path,
+    rows: list[dict[str, object]],
+    index_state: dict[str, SessionIndexThreadState],
+) -> set[str]:
+    state_db = codex / "state_5.sqlite"
+    repairs: list[tuple[str, str, object]] = []
+    for item in rows:
+        thread_id = item.get("id")
+        if not isinstance(thread_id, str) or not thread_id:
+            continue
+        current_title = item.get("title")
+        best_name = index_state.get(thread_id, SessionIndexThreadState()).best_name
+        if not best_name or not _looks_like_prompt_title(current_title):
+            continue
+        if str(current_title).strip() == best_name:
+            continue
+        repairs.append((best_name, thread_id, current_title))
+
+    if not repairs:
+        return set()
+
+    backup_dir = backup_root(codex, "thread-title-repair-backup")
+    backup_copy(state_db, backup_dir, codex)
+    for suffix in ("-shm", "-wal"):
+        sidecar = codex / f"state_5.sqlite{suffix}"
+        backup_copy(sidecar, backup_dir, codex)
+
+    repaired: set[str] = set()
+    try:
+        conn = sqlite3.connect(state_db)
+    except sqlite3.Error:
+        return repaired
+    try:
+        columns = sqlite_threads_columns(conn)
+        if "id" not in columns or "title" not in columns:
+            return repaired
+        for title, thread_id, old_title in repairs:
+            cur = conn.execute(
+                "UPDATE threads SET title = ? WHERE id = ? AND title = ?",
+                (title, thread_id, old_title),
+            )
+            if cur.rowcount:
+                repaired.add(thread_id)
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        return set()
+    finally:
+        conn.close()
+
+    if repaired:
+        print(f"thread titles repaired → {len(repaired)}")
+        print(f"thread title backup → {backup_dir}")
+    return repaired
 
 
 def maybe_repair_session_index(codex: Path) -> None:
@@ -1242,10 +1343,19 @@ def maybe_repair_session_index(codex: Path) -> None:
     finally:
         conn.close()
 
-    latest = _read_session_index_latest(index)
+    row_items = [{name: value for name, value in zip(selected, row)} for row in rows]
+    index_state = _read_session_index_state(index)
+    repaired_titles = repair_prompt_like_thread_titles_from_index(codex, row_items, index_state)
+    if repaired_titles:
+        for item in row_items:
+            thread_id = item.get("id")
+            if isinstance(thread_id, str) and thread_id in repaired_titles:
+                best_name = index_state.get(thread_id, SessionIndexThreadState()).best_name
+                if best_name:
+                    item["title"] = best_name
+
     additions: list[dict[str, str]] = []
-    for row in rows:
-        item = {name: value for name, value in zip(selected, row)}
+    for item in row_items:
         thread_id = item.get("id")
         if not isinstance(thread_id, str) or not thread_id:
             continue
@@ -1257,9 +1367,15 @@ def maybe_repair_session_index(codex: Path) -> None:
             current_ms = int(updated_at * 1000)
         else:
             continue
-        if current_ms <= latest.get(thread_id, 0):
-            continue
+        latest = index_state.get(thread_id, SessionIndexThreadState())
         title = item.get("title") or item.get("preview") or "Untitled session"
+        should_append_repaired_title = (
+            thread_id in repaired_titles
+            and isinstance(title, str)
+            and latest.latest_name != title
+        )
+        if current_ms <= latest.latest_ms and not should_append_repaired_title:
+            continue
         additions.append(
             {
                 "id": thread_id,

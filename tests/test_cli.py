@@ -862,6 +862,67 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertEqual(lines[-1]["thread_name"], "New title")
         self.assertEqual(lines[-1]["updated_at"], "2026-05-28T10:35:09.824000Z")
 
+    def test_use_restores_prompt_like_sqlite_title_from_session_index(self) -> None:
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                '',
+            ])
+        )
+        prompt_title = "<aside>\n💡\n\n**目标**：做一个 IT 学习版 Duolingo\n</aside>"
+        index = self.codex_home / "session_index.jsonl"
+        index.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "id": "thread-1",
+                            "thread_name": "技术多邻国",
+                            "updated_at": "2026-06-03T12:32:14.456811Z",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "id": "thread-1",
+                            "thread_name": prompt_title,
+                            "updated_at": "2026-06-04T00:50:42.834000Z",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "",
+                ]
+            )
+        )
+        write_thread_index_db(
+            self.codex_home / "state_5.sqlite",
+            thread_id="thread-1",
+            title=prompt_title,
+            updated_at=1780534242,
+            updated_at_ms=1780534242834,
+            provider="relay",
+            model="gpt-5.5",
+        )
+
+        _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("thread titles repaired → 1", output)
+        self.assertIn("session index repaired → 1 entries", output)
+        conn = sqlite3.connect(self.codex_home / "state_5.sqlite")
+        try:
+            (title,) = conn.execute("SELECT title FROM threads WHERE id = 'thread-1'").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(title, "技术多邻国")
+        lines = [json.loads(line) for line in index.read_text().splitlines()]
+        self.assertEqual(lines[-1]["id"], "thread-1")
+        self.assertEqual(lines[-1]["thread_name"], "技术多邻国")
+        self.assertEqual(lines[-1]["updated_at"], "2026-06-04T00:50:42.834000Z")
+
 
 if __name__ == "__main__":
     unittest.main()
