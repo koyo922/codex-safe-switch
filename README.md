@@ -9,7 +9,7 @@
 
 ## 第一次用？先看这里
 
-**这个工具解决什么问题:** Codex CLI 同一时间只能连一个 provider。手动改 `~/.codex/config.toml` 切换 relay / 官方账号时,很容易把本地状态(尤其是**历史会话 metadata**)弄乱,导致切回去后**历史会话列表消失**。这个工具把每个 provider 存成一个 profile,切换时只动 provider 字段、并自动对齐历史,所以切来切去历史都还在。
+**这个工具解决什么问题:** Codex CLI 同一时间只能连一个 provider。手动改 `~/.codex/config.toml` 切换 relay / 官方账号时,很容易把本地状态(尤其是**历史会话 metadata**)弄乱,导致切回去后**历史会话列表消失**。这个工具把每个 provider 存成一个 profile,切换时只动 provider 字段、并自动对齐历史，所以切来切去历史都还在。
 
 **30 秒上手:**
 
