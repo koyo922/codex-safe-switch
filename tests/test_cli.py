@@ -183,6 +183,62 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn('requires_openai_auth = false', provider)
         self.assertIn('env_key = "RELAY_KEY"', provider)
 
+    def test_save_profile_omits_model_providers_when_model_provider_is_commented_out(self) -> None:
+        self.set_current_official()
+        (self.codex_home / "config.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                '# model_provider = "relay"',
+                'preferred_auth_method = "apikey"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                'requires_openai_auth = false',
+                'env_key = "RELAY_KEY"',
+                '',
+            ])
+        )
+
+        self.run_cli("save", "relay")
+
+        provider = (self.profile_root / "relay" / "provider.toml").read_text()
+        self.assertIn('model = "gpt-5.5"', provider)
+        self.assertIn('preferred_auth_method = "apikey"', provider)
+        self.assertNotIn("model_providers", provider)
+        self.assertNotIn("relay.example", provider)
+
+    def test_save_profile_keeps_only_active_model_provider_block(self) -> None:
+        self.set_current_official()
+        (self.codex_home / "config.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                'preferred_auth_method = "apikey"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                '',
+                '[model_providers.other]',
+                'name = "other"',
+                'base_url = "https://other.example/openai"',
+                'wire_api = "responses"',
+                '',
+            ])
+        )
+
+        self.run_cli("save", "relay")
+
+        provider = (self.profile_root / "relay" / "provider.toml").read_text()
+        self.assertIn('model_provider = "relay"', provider)
+        self.assertIn("[model_providers.relay]", provider)
+        self.assertIn("relay.example", provider)
+        self.assertNotIn("[model_providers.other]", provider)
+        self.assertNotIn("other.example", provider)
+
     def test_first_run_ls_imports_existing_official_config(self) -> None:
         self.set_current_official()
 
@@ -207,6 +263,32 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
         provider = (self.profile_root / ".official" / "provider.toml").read_text()
         self.assertIn('model_provider = "openai"', provider)
+
+    def test_save_official_refreshes_hidden_official_snapshot(self) -> None:
+        self.set_current_official()
+
+        _code, output = self.run_cli_output("save", "official")
+
+        self.assertIn("saved → official", output)
+        self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
+        provider = (self.profile_root / ".official" / "provider.toml").read_text()
+        self.assertIn('model_provider = "openai"', provider)
+        self.assertIn('preferred_auth_method = "chatgpt"', provider)
+
+    def test_save_official_rejects_non_official_current_config(self) -> None:
+        self.set_current_relay()
+
+        stderr = io.StringIO()
+        with (
+            patch.dict(os.environ, self.env, clear=False),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            cli.main(["save", "official"])
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("current config is not the official OpenAI provider", stderr.getvalue())
+        self.assertFalse((self.profile_root / ".official").exists())
 
     def test_alfred_list_offers_initialize_action_when_profiles_and_config_are_missing(self) -> None:
         _code, output = self.run_cli_output("alfred-list")

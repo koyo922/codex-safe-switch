@@ -22,7 +22,7 @@ PROVIDER_TOP_KEYS = frozenset({
     "preferred_auth_method",
 })
 
-# Top-level tables that belong to a provider profile.
+# Top-level tables that may contain provider profile config.
 PROVIDER_TABLES = frozenset({"model_providers"})
 
 
@@ -32,6 +32,14 @@ def load(path: Path):
     return tomlkit.parse(path.read_text())
 
 
+def _active_provider_name(doc) -> str | None:
+    value = doc.get("model_provider")
+    if value is None:
+        return None
+    name = str(value).strip()
+    return name or None
+
+
 def extract(src: Path, dst: Path) -> None:
     """Write the provider-related slice of src into dst as a standalone toml."""
     doc = load(src)
@@ -39,9 +47,13 @@ def extract(src: Path, dst: Path) -> None:
     for k in PROVIDER_TOP_KEYS:
         if k in doc:
             out[k] = doc[k]
-    for t in PROVIDER_TABLES:
-        if t in doc:
-            out[t] = doc[t]
+
+    provider_name = _active_provider_name(doc)
+    providers = doc.get("model_providers")
+    if provider_name and providers is not None and provider_name in providers:
+        out["model_providers"] = tomlkit.parse(
+            tomlkit.dumps({"model_providers": {provider_name: providers[provider_name]}})
+        )["model_providers"]
     dst.write_text(tomlkit.dumps(out))
 
 

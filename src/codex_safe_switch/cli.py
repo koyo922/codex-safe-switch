@@ -1598,10 +1598,20 @@ def cmd_official(args) -> int:
 
 def cmd_save(args) -> int:
     name = normalize_profile_name(args.name)
-    if name in {OFFICIAL_PROFILE_NAME, "bin", ".active"} or args.name.startswith("."):
-        _die(f"reserved name: {args.name}")
     if args.shared and args.scope:
         _die("choose either --shared or --scope, not both")
+    if name == OFFICIAL_PROFILE_NAME:
+        codex = codex_dir()
+        if not current_provider_looks_official(codex):
+            _die(
+                "current config is not the official OpenAI provider; "
+                "switch/login with official OpenAI first, then run `codex-safe-switch save official`"
+            )
+        snapshot_official_state(codex)
+        print("saved → official")
+        return 0
+    if name in {"bin", ".active"} or args.name.startswith("."):
+        _die(f"reserved name: {args.name}")
     dir_ = profile_root() / name
     dir_.mkdir(parents=True, exist_ok=True)
 

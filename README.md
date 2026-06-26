@@ -20,6 +20,12 @@ codex-safe-switch save myrelay      # 3. 把当前 provider 存成名为 myrelay
 codex-safe-switch official          # 4. 一键切回官方 OpenAI
 ```
 
+如果你第一次运行时当前就是官方 OpenAI 登录，工具会自动把 provider 片段保存到隐藏 profile `~/.codex/profiles/.official/`，active 名称显示为 `official`。也可以在官方配置生效时手动刷新一次：
+
+```bash
+codex-safe-switch save official     # 只保存官方 provider 配置，不保存 auth.json
+```
+
 **如果你是因为「切换后历史会话消失」才找到这里：** 别慌，历史文件通常没丢，只是 metadata 和当前 provider 对不上。
 
 ```bash
@@ -62,6 +68,8 @@ codex-safe-switch current      # 打印当前 active profile
 codex-safe-switch official     # 切回官方 OpenAI provider（别名：openai）
 codex-safe-switch use [name]   # 加载 <name>；不传 name 时进入选择器
 codex-safe-switch save <name>  # 把当前 provider 配置保存成 <name>
+codex-safe-switch save official
+                               # 当前配置是官方 OpenAI 时，刷新隐藏官方快照
 codex-safe-switch show <name>  # 打印 <name> 的 provider.toml 和 session-state
 codex-safe-switch state <name> # 查看/设置 profile 的 session-state 作用域
 codex-safe-switch rm <name>    # 删除 profile（不允许删除 active）
@@ -100,6 +108,8 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
 
 **不接管 `auth.json`。** Profile 只保存 provider 相关配置；`~/.codex/auth.json` 由 Codex 自己维护。`save` / `use` / `official` 都不会保存或写回 `auth.json`，所以切换 provider 不会覆盖你的官方 ChatGPT 登录缓存或本地认证状态。
 
+**只保存当前启用的 provider 块。** 如果你把 `model_provider = "..."` 注释掉了，即使下面还留着 `[model_providers.<name>]` 块，`save` 也不会把那块当成当前 profile 保存；如果启用了 `model_provider = "relay"`，只保存 `[model_providers.relay]`，不会顺手带走其他 provider 块。
+
 **历史会话默认对齐。** 每次 `use` / `official` 后自动把本地历史 metadata 对齐到当前 provider 和 model，所以 relay 和官方账号之间切换时历史不会消失：
 
 - 自动修复 rollout 文件 + `state_5.sqlite` 里的 provider/model 列。
@@ -108,6 +118,8 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
 - `merge-history --keep-models` 可以只修 provider 不改 model；`--dry-run` 预览；`doctor-history` 只读诊断。
 
 **官方 OpenAI 一键回退。** `codex-safe-switch official` 切回官方 OpenAI provider，工具维护隐藏 provider 快照 `~/.codex/profiles/.official/`，第一次从官方切走时自动刷新。
+
+你也可以在当前配置就是官方 OpenAI 时运行 `codex-safe-switch save official` 主动刷新这个隐藏快照；如果当前配置不是官方 OpenAI，会直接拒绝，避免把 relay 误存成 official。
 
 **进程隔离。** `restart-codex`（以及 `--restart-codex`）精确跳过 `codex-safe-switch` 自身进程，不会自杀。
 

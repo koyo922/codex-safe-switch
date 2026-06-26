@@ -20,6 +20,12 @@ codex-safe-switch save myrelay      # 3. snapshot the current provider as a prof
 codex-safe-switch official          # 4. one command back to official OpenAI
 ```
 
+If your current config is the official OpenAI login on first run, the tool automatically stores the provider slice in the hidden profile `~/.codex/profiles/.official/`, and the active name shows as `official`. You can also refresh it explicitly while the official config is active:
+
+```bash
+codex-safe-switch save official     # saves official provider config only; never saves auth.json
+```
+
 **If you found this *because* your history disappeared after a switch:** don't panic — the history files are usually still there, the metadata just no longer matches the active provider.
 
 ```bash
@@ -62,6 +68,8 @@ codex-safe-switch current      # print the active profile
 codex-safe-switch official     # switch back to the official OpenAI provider (alias: openai)
 codex-safe-switch use [name]   # load <name>; omit for the picker
 codex-safe-switch save <name>  # snapshot the current provider config as <name>
+codex-safe-switch save official
+                               # refresh the hidden official snapshot when the current config is official OpenAI
 codex-safe-switch show <name>  # print <name>'s provider.toml and session state
 codex-safe-switch state <name> # show/set the session-state scope for a profile
 codex-safe-switch rm <name>    # delete profile (the active one is protected)
@@ -100,6 +108,8 @@ The workflow calls `$HOME/.local/bin/codex-safe-switch`. If `uv tool install` pu
 
 **`auth.json` is not managed.** Profiles only store provider-related config; `~/.codex/auth.json` stays owned by Codex itself. `save`, `use`, and `official` never save or write back `auth.json`, so switching providers does not overwrite your official ChatGPT login cache or local auth state.
 
+**Only the active provider block is saved.** If `model_provider = "..."` is commented out, `save` will not treat a remaining `[model_providers.<name>]` block below it as the current profile. If `model_provider = "relay"` is active, only `[model_providers.relay]` is saved; other provider blocks are left out.
+
 **History is aligned by default.** Every `use` / `official` aligns local Codex history metadata to the active provider and model, so session history stays visible across relays and the official OpenAI login:
 
 - Rollout files and the `state_5.sqlite` threads table get fixed automatically.
@@ -108,6 +118,8 @@ The workflow calls `$HOME/.local/bin/codex-safe-switch`. If `uv tool install` pu
 - `merge-history --keep-models` does a provider-only repair; `--dry-run` previews; `doctor-history` is read-only diagnostics.
 
 **One-step back to official.** `codex-safe-switch official` is the shortcut back to the official OpenAI provider. The tool keeps a hidden provider snapshot at `~/.codex/profiles/.official/`, refreshed automatically the first time you switch away from official.
+
+You can also run `codex-safe-switch save official` while the current config is official OpenAI to refresh that hidden snapshot explicitly. If the current config is not official OpenAI, the command refuses to run so a relay cannot be saved as `official` by mistake.
 
 **Process isolation.** `restart-codex` (and `--restart-codex`) precisely skips the `codex-safe-switch` process itself so it never kills its own switch.
 
