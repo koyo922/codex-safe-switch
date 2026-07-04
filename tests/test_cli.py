@@ -183,6 +183,47 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn('requires_openai_auth = false', provider)
         self.assertIn('env_key = "RELAY_KEY"', provider)
 
+    def test_save_openai_auth_bearer_profile_keeps_chatgpt_auth_path(self) -> None:
+        self.env["RELAY_TOKEN"] = "sk-relay-secret"
+        self.set_current_official()
+        (self.codex_home / "config.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                'preferred_auth_method = "apikey"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                'requires_openai_auth = false',
+                'env_key = "RELAY_KEY"',
+                '',
+                '[model_providers.relay.auth]',
+                'command = "/bin/echo"',
+                'args = ["old-token"]',
+                '',
+            ])
+        )
+
+        _code, output = self.run_cli_output(
+            "save",
+            "relay",
+            "--openai-auth-bearer-env",
+            "RELAY_TOKEN",
+        )
+
+        self.assertIn("saved → relay", output)
+        provider_path = self.profile_root / "relay" / "provider.toml"
+        provider = provider_path.read_text()
+        self.assertIn('preferred_auth_method = "chatgpt"', provider)
+        self.assertIn('requires_openai_auth = true', provider)
+        self.assertIn('experimental_bearer_token = "sk-relay-secret"', provider)
+        self.assertNotIn("env_key", provider)
+        self.assertNotIn("[model_providers.relay.auth]", provider)
+        self.assertFalse((self.profile_root / "relay" / "auth.json").exists())
+        self.assertEqual(provider_path.stat().st_mode & 0o777, 0o600)
+
     def test_save_profile_omits_model_providers_when_model_provider_is_commented_out(self) -> None:
         self.set_current_official()
         (self.codex_home / "config.toml").write_text(
@@ -351,6 +392,8 @@ class CodexSwitchCliTests(unittest.TestCase):
         _code, output = self.run_cli_output("use", "relay")
 
         self.assertIn("switched → relay", output)
+        self.assertIn("remote auth warning", output)
+        self.assertIn("--openai-auth-bearer-env", output)
         config = self.read_config()
         self.assertIn('model_provider = "relay"', config)
         self.assertIn('requires_openai_auth = false', config)
@@ -359,6 +402,31 @@ class CodexSwitchCliTests(unittest.TestCase):
             json.loads((self.codex_home / "auth.json").read_text()),
             {"auth_mode": "chatgpt", "token": "official"},
         )
+
+    def test_use_openai_auth_bearer_profile_does_not_warn_about_remote_auth(self) -> None:
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                'preferred_auth_method = "chatgpt"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                'requires_openai_auth = true',
+                'experimental_bearer_token = "sk-relay-secret"',
+                '',
+            ])
+        )
+
+        _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("switched → relay", output)
+        self.assertNotIn("remote auth warning", output)
 
     def test_use_env_key_profile_ignores_stale_profile_chatgpt_tokens(self) -> None:
         self.set_current_official()
@@ -390,6 +458,29 @@ class CodexSwitchCliTests(unittest.TestCase):
             json.loads((self.codex_home / "auth.json").read_text()),
             {"auth_mode": "chatgpt", "token": "official"},
         )
+
+    def test_restart_codex_warns_when_active_provider_may_drop_remote_auth(self) -> None:
+        self.set_current_official()
+        (self.codex_home / "config.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                'requires_openai_auth = false',
+                'env_key = "RELAY_KEY"',
+                '',
+            ])
+        )
+
+        with patch("codex_safe_switch.cli.restart_codex_processes", return_value=2):
+            _code, output = self.run_cli_output("restart-codex")
+
+        self.assertIn("remote auth warning", output)
+        self.assertIn("restarted Codex processes → 2", output)
 
     def test_switching_profile_with_auth_file_never_replaces_current_auth_json(self) -> None:
         self.set_current_official()

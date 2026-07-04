@@ -1,0 +1,19 @@
+model = "gpt-5-codex"
+model_provider = "myrelay"
+model_reasoning_effort = "high"
+preferred_auth_method = "chatgpt"
+
+[model_providers.myrelay]
+name = "myrelay"
+base_url = "https://your-relay.example.com/openai"
+wire_api = "responses"
+
+# Use this shape when the relay should keep Codex on the ChatGPT/OpenAI auth
+# path so Codex App, plugins, and mobile Remote remain available.
+requires_openai_auth = true
+
+# Fill this through:
+#   codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
+#
+# Do not commit a real token.
+experimental_bearer_token = "sk-redacted"

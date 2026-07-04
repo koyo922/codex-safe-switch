@@ -152,6 +152,100 @@ def current_identity() -> IdentityConfig:
     return IdentityConfig(provider=provider or None, model=model or None)
 
 
+def write_openai_auth_bearer_profile(provider_path: Path, token_env: str) -> None:
+    """Convert a saved provider profile into an OpenAI-auth relay profile.
+
+    This is for LLM proxies/relays that need their own upstream bearer token but
+    should still keep Codex on the ChatGPT/OpenAI auth path so app-backed
+    features such as Codex Remote remain available.
+    """
+    env_name = token_env.strip()
+    if not env_name:
+        _die("--openai-auth-bearer-env must not be empty")
+    token = os.environ.get(env_name)
+    if not token:
+        _die(f"environment variable is empty or missing: {env_name}")
+
+    doc = _swap.load(provider_path)
+    provider_name = doc.get("model_provider")
+    provider_name = str(provider_name).strip() if provider_name is not None else None
+    if not provider_name:
+        _die("current config has no active model_provider to save")
+
+    providers = doc.get("model_providers")
+    if providers is None or provider_name not in providers:
+        _die(f"current config has no [model_providers.{provider_name}] block to save")
+
+    provider = providers[provider_name]
+    for key in ("env_key", "env_key_instructions"):
+        if key in provider:
+            del provider[key]
+    if "auth" in provider:
+        del provider["auth"]
+
+    provider["requires_openai_auth"] = True
+    provider["experimental_bearer_token"] = token
+    doc["preferred_auth_method"] = "chatgpt"
+    provider_path.write_text(tomlkit.dumps(doc))
+    provider_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+def auth_cache_looks_chatgpt(codex: Path) -> bool:
+    path = codex / "auth.json"
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    if str(data.get("auth_mode") or "").strip() == "chatgpt":
+        return True
+    return data.get("OPENAI_API_KEY") is None and isinstance(data.get("tokens"), dict)
+
+
+def provider_auth_risk(codex: Path) -> Optional[str]:
+    if not auth_cache_looks_chatgpt(codex):
+        return None
+
+    cfg = _swap.load(codex / "config.toml")
+    provider_name = cfg.get("model_provider")
+    provider_name = str(provider_name).strip() if provider_name is not None else None
+    if not provider_name or provider_name == "openai":
+        return None
+
+    providers = cfg.get("model_providers")
+    if providers is None or provider_name not in providers:
+        return None
+    provider = providers[provider_name]
+    if bool(provider.get("requires_openai_auth")):
+        return None
+    if "auth" in provider:
+        return "provider auth command"
+    if "env_key" in provider:
+        return "env_key"
+    if "experimental_bearer_token" in provider:
+        return "bearer token without requires_openai_auth"
+    return "custom provider without OpenAI auth"
+
+
+def maybe_warn_remote_auth_risk(codex: Path) -> None:
+    reason = provider_auth_risk(codex)
+    if not reason:
+        return
+    print(
+        "remote auth warning → current ChatGPT auth cache is preserved, but "
+        f"active provider uses {reason}; Codex Remote / app-backed ChatGPT "
+        "features may not stay signed in after restart"
+    )
+    print(
+        "remote auth hint → for relays that should keep Remote, save with "
+        "`codex-safe-switch save <name> --openai-auth-bearer-env ENV` or use "
+        "`requires_openai_auth = true` plus `experimental_bearer_token`"
+    )
+
+
 def list_profiles() -> list[str]:
     root = profile_root()
     if not root.exists():
@@ -1438,6 +1532,7 @@ def switch_to_profile(name: str, *, restart_codex: bool = False) -> int:
 
     active_file().write_text(normalized_name + "\n")
     print(f"switched → {normalized_name}")
+    maybe_warn_remote_auth_risk(codex)
     maybe_auto_merge_history(codex)
     maybe_repair_session_index(codex)
     maybe_repair_remote_selection_state(codex)
@@ -1621,6 +1716,8 @@ def cmd_save(args) -> int:
         _swap.extract(cfg, dir_ / "provider.toml")
     else:
         (dir_ / "provider.toml").write_text("")
+    if args.openai_auth_bearer_env:
+        write_openai_auth_bearer_profile(dir_ / "provider.toml", args.openai_auth_bearer_env)
     (dir_ / "auth.json").unlink(missing_ok=True)
 
     if args.shared:
@@ -1749,6 +1846,7 @@ def cmd_pick(_args) -> int:
 
 
 def cmd_restart_codex(_args) -> int:
+    maybe_warn_remote_auth_risk(codex_dir())
     count = restart_codex_processes()
     print(f"restarted Codex processes → {count}")
     return 0
@@ -1778,6 +1876,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = subs.add_parser("save", help="snapshot the current provider config as <name>")
     s.add_argument("name")
+    s.add_argument(
+        "--openai-auth-bearer-env",
+        metavar="ENV",
+        help=(
+            "save this relay for ChatGPT/OpenAI auth plus a provider bearer token from ENV; "
+            "writes requires_openai_auth=true and experimental_bearer_token"
+        ),
+    )
     s.add_argument("--scope", help="also bind this profile to a session-state scope and seed it now")
     s.add_argument("--shared", action="store_true", help="clear any session-state scope while saving")
     s.set_defaults(func=cmd_save)

@@ -68,6 +68,8 @@ codex-safe-switch current      # print the active profile
 codex-safe-switch official     # switch back to the official OpenAI provider (alias: openai)
 codex-safe-switch use [name]   # load <name>; omit for the picker
 codex-safe-switch save <name>  # snapshot the current provider config as <name>
+codex-safe-switch save <name> --openai-auth-bearer-env RELAY_TOKEN
+                               # save a ChatGPT-auth relay profile with a bearer token
 codex-safe-switch save official
                                # refresh the hidden official snapshot when the current config is official OpenAI
 codex-safe-switch show <name>  # print <name>'s provider.toml and session state
@@ -123,6 +125,8 @@ You can also run `codex-safe-switch save official` while the current config is o
 
 **Process isolation.** `restart-codex` (and `--restart-codex`) precisely skips the `codex-safe-switch` process itself so it never kills its own switch.
 
+**Remote login risk warnings.** If the current `auth.json` is a ChatGPT login but the active provider uses `env_key` or `[model_providers.<name>.auth]`, `use` and `restart-codex` warn that Codex Remote / ChatGPT-backed app features may not stay signed in. Normal API-key relays still work; use `--openai-auth-bearer-env` when the relay should keep mobile Remote, plugins, and Codex App on the ChatGPT auth path.
+
 </details>
 
 <details>
@@ -137,12 +141,28 @@ You can also run `codex-safe-switch save official` while the current config is o
     └── provider.toml             # only provider-related keys (see examples/)
 ```
 
-**Add a relay profile**
+**Add a normal API-key relay profile**
 
 1. Configure the relay normally in `~/.codex/config.toml` and verify `codex` works.
 2. If the key comes from the environment, set `env_key = "..."` in the provider config; profiles do not need or store `auth.json`.
 3. `codex-safe-switch save <name>` — snapshots the provider slice into a new profile.
 4. Use `cx` (Alfred) or `codex-safe-switch use <name>` to switch anytime.
+
+**Add a relay profile that keeps ChatGPT login / Codex Remote available**
+
+Some relays still need Codex to stay on the ChatGPT/OpenAI auth path so Codex App, plugins, mobile Remote, and other ChatGPT-backed capabilities keep working. Put the relay token in an environment variable, then run:
+
+```bash
+codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
+```
+
+This saves the active provider with:
+
+- `requires_openai_auth = true`
+- `experimental_bearer_token = "<current value of MYRELAY_TOKEN>"`
+- `preferred_auth_method = "chatgpt"`
+
+It also removes `env_key` and `[model_providers.<name>.auth]` from that provider so Codex does not enter the API-key / bearer-only auth path. Note that this mode writes the bearer token into the profile file and into `~/.codex/config.toml` when the profile is active; protect those files like `auth.json`.
 
 You can also hand-author profile files — see `examples/relay-profile/`.
 

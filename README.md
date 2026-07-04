@@ -68,6 +68,8 @@ codex-safe-switch current      # 打印当前 active profile
 codex-safe-switch official     # 切回官方 OpenAI provider（别名：openai）
 codex-safe-switch use [name]   # 加载 <name>；不传 name 时进入选择器
 codex-safe-switch save <name>  # 把当前 provider 配置保存成 <name>
+codex-safe-switch save <name> --openai-auth-bearer-env RELAY_TOKEN
+                               # 保存为 ChatGPT 登录态 + relay bearer token 的 profile
 codex-safe-switch save official
                                # 当前配置是官方 OpenAI 时，刷新隐藏官方快照
 codex-safe-switch show <name>  # 打印 <name> 的 provider.toml 和 session-state
@@ -123,6 +125,8 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
 
 **进程隔离。** `restart-codex`（以及 `--restart-codex`）精确跳过 `codex-safe-switch` 自身进程，不会自杀。
 
+**Remote 登录态风险提示。** 如果当前 `auth.json` 是 ChatGPT 登录态，但 active provider 使用 `env_key` 或 `[model_providers.<name>.auth]` 这类 API-key / bearer-only 认证形态，`use` 和 `restart-codex` 会提示风险。普通 API-key relay 仍然可以正常切换；但如果你希望手机 Remote、插件和 Codex App 继续使用 ChatGPT 登录态，请使用 `--openai-auth-bearer-env` 保存 profile。
+
 </details>
 
 <details>
@@ -137,12 +141,28 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
     └── provider.toml             # 只包含 provider 字段（见 examples/）
 ```
 
-**添加 relay profile**
+**添加普通 API-key relay profile**
 
 1. 在 `~/.codex/config.toml` 里配置 relay，确认 `codex` 能跑。
 2. 如果 key 来自环境变量，在 provider 里配置 `env_key = "..."`；profile 不需要也不会保存 `auth.json`。
 3. `codex-safe-switch save <name>` 把 provider 片段存成 profile。
 4. 之后用 `cx`（Alfred）或 `codex-safe-switch use <name>` 随时切。
+
+**添加需要保留 ChatGPT 登录态 / Codex Remote 的 relay profile**
+
+有些 relay 仍希望 Codex 使用 ChatGPT/OpenAI 登录链路，这样 Codex App、插件、手机 Remote 等依赖 ChatGPT 登录态的能力不会掉线。先把 relay token 放进环境变量，然后用：
+
+```bash
+codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
+```
+
+这个命令会把当前 active provider 保存成下面的形态：
+
+- `requires_openai_auth = true`
+- `experimental_bearer_token = "<MYRELAY_TOKEN 的当前值>"`
+- `preferred_auth_method = "chatgpt"`
+
+同时会移除该 provider 里的 `env_key` 和 `[model_providers.<name>.auth]`，避免 Codex 进入 API-key / bearer-only 认证链路。注意：这种模式会把 bearer token 写入 profile 文件和激活后的 `~/.codex/config.toml`，请像保护 `auth.json` 一样保护这些文件。
 
 也可以手写 profile 文件，参考 `examples/relay-profile/`。
 
