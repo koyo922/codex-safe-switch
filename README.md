@@ -48,6 +48,14 @@ codex-safe-switch save myrelay
 codex-safe-switch use myrelay
 ```
 
+如果 relay 需要同时保留 ChatGPT 登录态和 Codex Remote，请把 relay token 放进环境变量后保存：
+
+```bash
+codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
+```
+
+这种模式会把 bearer token 写入 profile 和激活后的 `~/.codex/config.toml`，请像保护 `auth.json` 一样保护这些文件。
+
 ## 第一次用时会怎样
 
 | 你现在的状态 | 会发生什么 |
@@ -141,7 +149,7 @@ Profiles 默认放在：
 | `CODEX_PROFILE_ROOT` | `~/.codex/profiles` | profile 存放位置 |
 | `CODEX_HOME` | `~/.codex` | Codex 配置目录 |
 
-relay profile 示例见 [examples/relay-profile/provider.toml](examples/relay-profile/provider.toml)。
+relay profile 示例见 [examples/relay-profile/provider.toml](examples/relay-profile/provider.toml)。保留 ChatGPT 登录态的 relay 示例见 [examples/chatgpt-relay-profile/provider.toml](examples/chatgpt-relay-profile/provider.toml)。
 
 </details>
 

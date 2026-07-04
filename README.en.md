@@ -48,6 +48,14 @@ Switch back to it later:
 codex-safe-switch use myrelay
 ```
 
+If the relay must keep ChatGPT login and Codex Remote available, put the relay token in an environment variable and save it with:
+
+```bash
+codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
+```
+
+This mode writes the bearer token into the profile and the active `~/.codex/config.toml`; protect those files like `auth.json`.
+
 ## First Run Behavior
 
 | Current state | What happens |
@@ -141,7 +149,7 @@ Environment variables:
 | `CODEX_PROFILE_ROOT` | `~/.codex/profiles` | where profiles are stored |
 | `CODEX_HOME` | `~/.codex` | Codex config directory |
 
-See [examples/relay-profile/provider.toml](examples/relay-profile/provider.toml) for a relay profile example.
+See [examples/relay-profile/provider.toml](examples/relay-profile/provider.toml) for a relay profile example. See [examples/chatgpt-relay-profile/provider.toml](examples/chatgpt-relay-profile/provider.toml) for a relay that keeps ChatGPT login available.
 
 </details>
 
