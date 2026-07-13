@@ -574,7 +574,16 @@ def _desktop_bundled_codex_path() -> Path:
     raw = os.environ.get(DESKTOP_CODEX_PATH_ENV)
     if raw:
         return Path(raw).expanduser()
+    chatgpt_path = Path("/Applications/ChatGPT.app/Contents/Resources/codex")
+    if chatgpt_path.is_file():
+        return chatgpt_path
     return Path("/Applications/Codex.app/Contents/Resources/codex")
+
+
+def _unified_chatgpt_app_is_available() -> bool:
+    return _desktop_bundled_codex_path() == Path(
+        "/Applications/ChatGPT.app/Contents/Resources/codex"
+    )
 
 
 def _normalize_codex_version(value: object) -> Optional[str]:
@@ -634,7 +643,7 @@ def maybe_warn_cli_surface_mismatch(codex: Path, daemon_version: dict) -> None:
     for surface in surfaces:
         path = f" ({surface.path})" if surface.path is not None else ""
         print(f"  {surface.label}: {surface.version}{path}")
-    print("codex cli note → Desktop app owns its bundled CLI; update/restart Codex.app instead of overwriting the app bundle")
+    print("codex cli note → Desktop app owns its bundled CLI; update/restart the Desktop app instead of overwriting its bundle")
 
 
 def _remote_control_needs_standalone_install(text: str) -> bool:
@@ -767,6 +776,8 @@ def maybe_repair_remote_control(codex: Path) -> set[int]:
 
     daemon_version = _load_daemon_version(codex)
     maybe_warn_cli_surface_mismatch(codex, daemon_version)
+    if not daemon_version and _unified_chatgpt_app_is_available():
+        return set()
     managed_path = _managed_standalone_path(codex, daemon_version)
     if not managed_path.is_file():
         _print_missing_standalone_warning(managed_path)

@@ -116,7 +116,7 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
 
 - 自动修复 rollout 文件 + `state_5.sqlite` 里的 provider/model 列。
 - 如果 `session_index.jsonl` 落后于 SQLite 最新 thread，会补追加索引，避免移动端历史停在旧时间点。
-- 已用过 Codex remote-control 的机器会顺手检查 managed app-server 链路，处理旧的 unix socket / SSH proxy 残留。
+- 已用过 Codex remote-control 的机器会顺手检查远程链路：新版合并后的 `ChatGPT.app` 直接使用 App 内置 Codex，不再要求旧的 `~/.codex/packages/standalone`；旧式 daemon 环境仍会检查 managed app-server，并处理旧的 unix socket / SSH proxy 残留。
 - `merge-history --keep-models` 可以只修 provider 不改 model；`--dry-run` 预览；`doctor-history` 只读诊断。
 
 **官方 OpenAI 一键回退。** `codex-safe-switch official` 切回官方 OpenAI provider，工具维护隐藏 provider 快照 `~/.codex/profiles/.official/`，第一次从官方切走时自动刷新。

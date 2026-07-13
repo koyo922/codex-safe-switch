@@ -600,6 +600,36 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertEqual(provider, "relay")
         self.assertEqual(model, "gpt-5.5")
 
+    def test_switches_preserve_node_repl_proxy_environment(self) -> None:
+        self.set_current_official()
+        config_path = self.codex_home / "config.toml"
+        config_path.write_text(
+            config_path.read_text()
+            + '\n[mcp_servers.node_repl.env]\nNODE_OPTIONS = "--use-env-proxy"\n'
+        )
+        self.snapshot_official()
+
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                '',
+            ])
+        )
+
+        self.run_cli("use", "relay")
+        self.assertIn('NODE_OPTIONS = "--use-env-proxy"', self.read_config())
+
+        self.run_cli("official")
+        self.assertIn('NODE_OPTIONS = "--use-env-proxy"', self.read_config())
+
     def test_merge_history_keep_models_preserves_existing_thread_models(self) -> None:
         self.set_current_official()
         write_rollout(self.codex_home / "sessions" / "2026" / "05" / "test.jsonl", "relay", model="gpt-5.5")
@@ -695,6 +725,33 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn("switched → relay", output)
         self.assertIn("remote-control warning → managed standalone Codex missing", output)
         self.assertIn("curl -fsSL https://chatgpt.com/codex/install.sh | sh", output)
+
+    def test_use_skips_legacy_standalone_check_for_unified_chatgpt_app(self) -> None:
+        self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"
+        self.env[cli.CLI_SURFACE_CHECK_ENV] = "0"
+        self.set_current_official()
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text('model_provider = "relay"\n')
+
+        with patch("codex_safe_switch.cli.shutil.which", return_value="/usr/local/bin/codex"), patch(
+            "codex_safe_switch.cli.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                ["codex", "app-server", "daemon", "version"],
+                1,
+                stdout="",
+                stderr="control socket missing",
+            ),
+        ) as run, patch(
+            "codex_safe_switch.cli._unified_chatgpt_app_is_available", return_value=True
+        ):
+            _code, output = self.run_cli_output("use", "relay")
+
+        self.assertIn("switched → relay", output)
+        self.assertNotIn("managed standalone Codex missing", output)
+        self.assertEqual(run.call_args_list[0].args[0], ["codex", "app-server", "daemon", "version"])
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertNotIn(["codex", "remote-control", "start", "--json"], commands)
 
     def test_use_repairs_unmanaged_app_server_and_retries_remote_control(self) -> None:
         self.env[cli.REMOTE_CONTROL_REPAIR_ENV] = "1"

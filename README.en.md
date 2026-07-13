@@ -116,7 +116,7 @@ The workflow calls `$HOME/.local/bin/codex-safe-switch`. If `uv tool install` pu
 
 - Rollout files and the `state_5.sqlite` threads table get fixed automatically.
 - If `session_index.jsonl` has fallen behind the latest threads in SQLite, the switch appends repaired index entries so mobile history lists don't stay pinned to an older point.
-- On hosts that have used Codex remote-control, the switch also checks the managed app-server path and clears stale unix sockets / stale SSH remote proxy processes.
+- On hosts that have used Codex remote-control, the switch checks the active remote path: the unified `ChatGPT.app` uses its bundled Codex and no longer requires the legacy `~/.codex/packages/standalone` install; legacy daemon setups still check the managed app-server and clear stale unix sockets / stale SSH remote proxy processes.
 - `merge-history --keep-models` does a provider-only repair; `--dry-run` previews; `doctor-history` is read-only diagnostics.
 
 **One-step back to official.** `codex-safe-switch official` is the shortcut back to the official OpenAI provider. The tool keeps a hidden provider snapshot at `~/.codex/profiles/.official/`, refreshed automatically the first time you switch away from official.
