@@ -100,6 +100,8 @@ codex-safe-switch use myrelay
 codex-safe-switch official
 ```
 
+Remote-path checks recognize the unified `ChatGPT.app` first: it uses the Codex binary bundled with the app and does not require the legacy `~/.codex/packages/standalone`; only legacy daemon setups check the managed standalone path.
+
 <details>
 <summary>More Commands</summary>
 

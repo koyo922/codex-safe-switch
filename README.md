@@ -100,6 +100,8 @@ codex-safe-switch use myrelay
 codex-safe-switch official
 ```
 
+远程链路检查会优先识别新版合并后的 `ChatGPT.app`：它直接使用 App 内置 Codex，不要求旧的 `~/.codex/packages/standalone`；只有旧式 daemon 环境才检查 managed standalone 路径。
+
 <details>
 <summary>更多命令</summary>
 
