@@ -104,9 +104,11 @@ The workflow calls `$HOME/.local/bin/codex-safe-switch`. If `uv tool install` pu
 
 **Only the provider slice is swapped — local state is preserved.** A profile owns these keys/tables in `~/.codex/config.toml`; everything else (trusted projects, plugins, marketplaces, MCP servers, TUI prefs, etc.) is left untouched:
 
-- `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`
+- `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`, `model_catalog_json`
 - `wire_api`, `disable_response_storage`, `preferred_auth_method`
 - `[model_providers.*]`
+
+`model_context_window` and `model_auto_compact_token_limit` are global context settings, not profile-owned fields; `use` / `official` preserve them. Therefore `codex_official` (the `codex-safe-switch official` alias) keeps the active config's 272K settings when switching back to the official provider.
 
 **`auth.json` is not managed.** Profiles only store provider-related config; `~/.codex/auth.json` stays owned by Codex itself. `save`, `use`, and `official` never save or write back `auth.json`, so switching providers does not overwrite your official ChatGPT login cache or local auth state.
 

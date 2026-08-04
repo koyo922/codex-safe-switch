@@ -560,6 +560,71 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertEqual(provider, "openai")
         self.assertEqual(model, "gpt-5.4")
 
+    def test_provider_switches_preserve_context_window_settings(self) -> None:
+        self.set_current_official()
+        config_path = self.codex_home / "config.toml"
+        config_path.write_text(
+            config_path.read_text()
+            + "model_context_window = 272000\n"
+            + "model_auto_compact_token_limit = 272000\n"
+        )
+        self.snapshot_official()
+
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text(
+            '\n'.join([
+                'model = "gpt-5.5"',
+                'model_provider = "relay"',
+                'preferred_auth_method = "apikey"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example/openai"',
+                'wire_api = "responses"',
+                'env_key = "RELAY_KEY"',
+                '',
+            ])
+        )
+
+        self.run_cli("use", "relay")
+        relay_config = self.read_config()
+        self.assertIn("model_context_window = 272000", relay_config)
+        self.assertIn("model_auto_compact_token_limit = 272000", relay_config)
+
+        self.run_cli("official")
+        official_config = self.read_config()
+        self.assertIn("model_context_window = 272000", official_config)
+        self.assertIn("model_auto_compact_token_limit = 272000", official_config)
+
+    def test_provider_switches_swap_model_catalog(self) -> None:
+        self.set_current_official()
+        self.snapshot_official()
+
+        relay_dir = self.profile_root / "relay"
+        relay_dir.mkdir()
+        (relay_dir / "provider.toml").write_text(
+            '\n'.join([
+                'model = "deepseek-v4-flash"',
+                'model_provider = "relay"',
+                'model_catalog_json = "/tmp/deepseek-models.json"',
+                '',
+                '[model_providers.relay]',
+                'name = "relay"',
+                'base_url = "https://relay.example"',
+                'wire_api = "responses"',
+                '',
+            ])
+        )
+
+        self.run_cli("use", "relay")
+        relay_config = self.read_config()
+        self.assertIn('model_catalog_json = "/tmp/deepseek-models.json"', relay_config)
+
+        self.run_cli("official")
+        official_config = self.read_config()
+        self.assertNotIn("model_catalog_json", official_config)
+
     def test_use_profile_auto_merges_history_to_target_provider(self) -> None:
         self.set_current_official()
 

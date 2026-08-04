@@ -104,9 +104,11 @@ workflow 默认调用 `$HOME/.local/bin/codex-safe-switch`。如果你的 `uv to
 
 **只接管 provider，不动本地状态。** 每个 profile 接管 `~/.codex/config.toml` 里的下面这些字段；其他内容（trusted projects、plugins、marketplaces、MCP servers、TUI 偏好等）切换时完整保留：
 
-- `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`
+- `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`, `model_catalog_json`
 - `wire_api`, `disable_response_storage`, `preferred_auth_method`
 - `[model_providers.*]`
+
+`model_context_window` 与 `model_auto_compact_token_limit` 是全局上下文设置，不属于 profile；`use` / `official` 会保留它们。因此 `codex_official`（即 `codex-safe-switch official`）切回官方 provider 时，也会继续使用当前配置中的 272K 设置。
 
 **不接管 `auth.json`。** Profile 只保存 provider 相关配置；`~/.codex/auth.json` 由 Codex 自己维护。`save` / `use` / `official` 都不会保存或写回 `auth.json`，所以切换 provider 不会覆盖你的官方 ChatGPT 登录缓存或本地认证状态。
 
