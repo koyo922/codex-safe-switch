@@ -69,9 +69,11 @@ codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
 
 ## 它不会碰登录信息
 
-这个工具只保存和切换 provider 配置切片：`model`、`model_provider`、`model_reasoning_effort`、`model_reasoning_summary`、`model_verbosity`、`wire_api`、`disable_response_storage`、`preferred_auth_method`，以及当前 provider 对应的 `[model_providers.<name>]`。
+这个工具只保存和切换 provider 配置切片：`model`、`model_provider`、`model_reasoning_effort`、`model_reasoning_summary`、`model_verbosity`、`model_catalog_json`、`wire_api`、`disable_response_storage`、`preferred_auth_method`，以及当前 provider 对应的 `[model_providers.<name>]`。
 
 切换 profile 时，这些顶层字段和整个 `[model_providers]` 会被目标 profile 替换；其他 provider block 不会作为备份保留或恢复。项目、插件、MCP 和 TUI 等其他配置保持不变。
+
+`model_context_window` 与 `model_auto_compact_token_limit` 是全局上下文设置，不属于 profile；`use` / `official` 会保留它们。
 
 它不会保存、复制或覆盖：
 

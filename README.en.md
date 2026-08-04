@@ -69,9 +69,11 @@ This mode writes the bearer token into the profile and the active `~/.codex/conf
 
 ## It Never Touches Login Data
 
-This tool only saves and switches a provider config slice: `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`, `wire_api`, `disable_response_storage`, `preferred_auth_method`, and the active provider's `[model_providers.<name>]` block.
+This tool only saves and switches a provider config slice: `model`, `model_provider`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`, `model_catalog_json`, `wire_api`, `disable_response_storage`, `preferred_auth_method`, and the active provider's `[model_providers.<name>]` block.
 
 When switching profiles, these top-level fields and the entire `[model_providers]` table are replaced by the target profile. Other provider blocks are not backed up or restored. Other config, including projects, plugins, MCP, and TUI settings, stays unchanged.
+
+`model_context_window` and `model_auto_compact_token_limit` are global context settings rather than profile-owned fields; `use` / `official` preserve them.
 
 It never saves, copies, or overwrites:
 
