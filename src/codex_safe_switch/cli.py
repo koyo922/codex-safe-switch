@@ -4,7 +4,7 @@ Storage layout:
 
     ~/.codex/profiles/
       ├── .active                   # name of the currently-loaded profile
-      ├── .official/                # reserved snapshot for official OpenAI login
+      ├── .codex-official/         # reserved snapshot for official OpenAI login
       └── <name>/
             ├── provider.toml       # merged into ~/.codex/config.toml
             └── session.toml        # optional session-state scope metadata
@@ -42,9 +42,9 @@ SESSION_STATE_FILES = (
     "state_5.sqlite-wal",
 )
 
-OFFICIAL_PROFILE_NAME = "official"
-OFFICIAL_PROFILE_DIRNAME = ".official"
-OFFICIAL_ALIASES = {OFFICIAL_PROFILE_NAME, "openai"}
+OFFICIAL_PROFILE_NAME = "codex-official"
+OFFICIAL_PROFILE_DIRNAME = ".codex-official"
+OFFICIAL_ALIASES = {OFFICIAL_PROFILE_NAME}
 REMOTE_CONTROL_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
 REMOTE_CONTROL_REPAIR_ENV = "CODEX_SWITCH_REMOTE_REPAIR"
 CLI_SURFACE_CHECK_ENV = "CODEX_SWITCH_CLI_SURFACE_CHECK"
@@ -1513,7 +1513,7 @@ def ensure_official_snapshot_available(codex: Path) -> None:
         snapshot_official_state(codex)
         return
     write_default_official_snapshot()
-    print("created default official profile → official")
+    print(f"created default official profile → {OFFICIAL_PROFILE_NAME}")
 
 
 def switch_to_profile(name: str, *, restart_codex: bool = False) -> int:
@@ -1717,12 +1717,12 @@ def cmd_save(args) -> int:
         if not current_provider_looks_official(codex):
             _die(
                 "current config is not the official OpenAI provider; "
-                "run `codex-safe-switch official` to switch with a default official ChatGPT profile, "
-                "or switch/login with official OpenAI first and rerun `codex-safe-switch save official` "
+                f"run `codex-safe-switch {OFFICIAL_PROFILE_NAME}` to switch with a default official ChatGPT profile, "
+                f"or switch/login with official OpenAI first and rerun `codex-safe-switch save {OFFICIAL_PROFILE_NAME}` "
                 "to capture exact settings"
             )
         snapshot_official_state(codex)
-        print("saved → official")
+        print(f"saved → {OFFICIAL_PROFILE_NAME}")
         return 0
     if name in {"bin", ".active"} or args.name.startswith("."):
         _die(f"reserved name: {args.name}")
@@ -1760,8 +1760,8 @@ def cmd_show(args) -> int:
     if not dir_.is_dir():
         if name == OFFICIAL_PROFILE_NAME:
             _die(
-                "profile not found: official; run `codex-safe-switch official` to create a default "
-                "official ChatGPT profile and switch, or run `codex-safe-switch save official` while "
+                f"profile not found: {OFFICIAL_PROFILE_NAME}; run `codex-safe-switch {OFFICIAL_PROFILE_NAME}` to create a default "
+                f"official ChatGPT profile and switch, or run `codex-safe-switch save {OFFICIAL_PROFILE_NAME}` while "
                 "the current config is official to capture exact settings"
             )
         _die(f"profile not found: {args.name}")
@@ -1856,7 +1856,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = subs.add_parser("current", help="print the active profile name")
     s.set_defaults(func=cmd_current)
 
-    s = subs.add_parser("official", aliases=["openai"], help="switch back to the official OpenAI provider")
+    s = subs.add_parser(OFFICIAL_PROFILE_NAME, help="switch back to the official OpenAI provider")
     s.add_argument("--restart-codex", action="store_true", help="terminate Codex app/server processes after switching")
     s.set_defaults(func=cmd_official)
 

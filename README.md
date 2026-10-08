@@ -29,7 +29,7 @@ uv tool upgrade codex-safe-switch
 ```bash
 codex-safe-switch ls            # 看已有 profiles
 codex-safe-switch use myrelay   # 切到 relay / 自定义 provider
-codex-safe-switch official      # 切回官方 ChatGPT
+codex-safe-switch codex-official # 切回官方 ChatGPT
 ```
 
 ## 保存一个新 profile
@@ -60,12 +60,12 @@ codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
 
 | 你现在的状态 | 会发生什么 |
 | --- | --- |
-| 正在用官方 ChatGPT | 自动保存成 `official` |
+| 正在用官方 ChatGPT | 自动保存成 `codex-official` |
 | 正在用 relay / 自定义 provider | 自动保存成当前 provider 名 |
-| 登录过 ChatGPT，但当前正在用 relay | 先保存当前 relay；以后跑 `codex-safe-switch official` 回官方 |
+| 登录过 ChatGPT，但当前正在用 relay | 先保存当前 relay；以后跑 `codex-safe-switch codex-official` 回官方 |
 | 还没有 `~/.codex/config.toml` | 提示你先配置一次 Codex |
 
-`codex-safe-switch official` 不需要提前存在 `official` profile。缺少时会自动创建默认官方配置再切换。
+`codex-safe-switch codex-official` 不需要提前存在 `codex-official` profile。缺少时会自动创建默认官方配置再切换。
 
 ## 它不会碰登录信息
 
@@ -73,7 +73,7 @@ codex-safe-switch save myrelay --openai-auth-bearer-env MYRELAY_TOKEN
 
 切换 profile 时，这些顶层字段和整个 `[model_providers]` 会被目标 profile 替换；其他 provider block 不会作为备份保留或恢复。项目、插件、MCP 和 TUI 等其他配置保持不变。
 
-`model_context_window` 与 `model_auto_compact_token_limit` 是全局上下文设置，不属于 profile；`use` / `official` 会保留它们。
+`model_context_window` 与 `model_auto_compact_token_limit` 是全局上下文设置，不属于 profile；profile 切换会保留它们。
 
 它不会保存、复制或覆盖：
 
@@ -99,7 +99,7 @@ codex-safe-switch doctor-history
 ```bash
 codex-safe-switch use myrelay
 # 或
-codex-safe-switch official
+codex-safe-switch codex-official
 ```
 
 远程链路检查会优先识别新版合并后的 `ChatGPT.app`：它直接使用 App 内置 Codex，不要求旧的 `~/.codex/packages/standalone`；只有旧式 daemon 环境才检查 managed standalone 路径。
@@ -112,7 +112,7 @@ codex-safe-switch              交互选择 profile
 codex-safe-switch ls           列出 profiles
 codex-safe-switch current      显示当前 profile
 codex-safe-switch use <name>   切到指定 profile
-codex-safe-switch official     切回官方 ChatGPT
+codex-safe-switch codex-official 切回官方 ChatGPT
 codex-safe-switch save <name>  保存当前 provider 配置
 codex-safe-switch show <name>  查看 profile 内容
 codex-safe-switch rm <name>    删除 profile
@@ -124,7 +124,7 @@ codex-safe-switch merge-history
                                修复历史 metadata
 ```
 
-`use` 和 `official` 可以加 `--restart-codex`：
+`use` 和 `codex-official` 可以加 `--restart-codex`：
 
 ```bash
 codex-safe-switch use myrelay --restart-codex
@@ -140,7 +140,7 @@ Profiles 默认放在：
 ```text
 ~/.codex/profiles/
 ├── .active
-├── .official/
+├── .codex-official/
 │   └── provider.toml
 └── myrelay/
     └── provider.toml

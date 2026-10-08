@@ -27,8 +27,8 @@ PROVIDER_TOP_KEYS = frozenset({
 PROVIDER_TABLES = frozenset({"model_providers"})
 
 # Context-window and auto-compaction limits are global Codex settings, not
-# provider profile settings.  Keep them in the active config so `use` / `official`
-# (including the user's `codex_official` alias) preserve them across switches.
+# provider profile settings. Keep them in the active config so profile switches
+# (including `codex-official`) preserve them across switches.
 
 
 def load(path: Path):

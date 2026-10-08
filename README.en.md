@@ -29,7 +29,7 @@ After that, you mostly need three commands:
 ```bash
 codex-safe-switch ls            # list profiles
 codex-safe-switch use myrelay   # switch to a relay / custom provider
-codex-safe-switch official      # switch back to official ChatGPT
+codex-safe-switch codex-official      # switch back to official ChatGPT
 ```
 
 ## Save A New Profile
@@ -60,12 +60,12 @@ This mode writes the bearer token into the profile and the active `~/.codex/conf
 
 | Current state | What happens |
 | --- | --- |
-| You are using official ChatGPT | Saved as `official` |
+| You are using official ChatGPT | Saved as `codex-official` |
 | You are using a relay / custom provider | Saved under the current provider name |
-| You are logged into ChatGPT, but currently using a relay | The relay is saved first; run `codex-safe-switch official` later to go back |
+| You are logged into ChatGPT, but currently using a relay | The relay is saved first; run `codex-safe-switch codex-official` later to go back |
 | There is no `~/.codex/config.toml` | The tool asks you to configure Codex once first |
 
-`codex-safe-switch official` does not require an existing `official` profile. If it is missing, the tool creates a default official config before switching.
+`codex-safe-switch codex-official` does not require an existing `codex-official` profile. If it is missing, the tool creates a default official config before switching.
 
 ## It Never Touches Login Data
 
@@ -73,7 +73,7 @@ This tool only saves and switches a provider config slice: `model`, `model_provi
 
 When switching profiles, these top-level fields and the entire `[model_providers]` table are replaced by the target profile. Other provider blocks are not backed up or restored. Other config, including projects, plugins, MCP, and TUI settings, stays unchanged.
 
-`model_context_window` and `model_auto_compact_token_limit` are global context settings rather than profile-owned fields; `use` / `official` preserve them.
+`model_context_window` and `model_auto_compact_token_limit` are global context settings rather than profile-owned fields; `use` / `codex-official` preserve them.
 
 It never saves, copies, or overwrites:
 
@@ -99,7 +99,7 @@ Then switch to the profile you want. The tool aligns history automatically:
 ```bash
 codex-safe-switch use myrelay
 # or
-codex-safe-switch official
+codex-safe-switch codex-official
 ```
 
 Remote-path checks recognize the unified `ChatGPT.app` first: it uses the Codex binary bundled with the app and does not require the legacy `~/.codex/packages/standalone`; only legacy daemon setups check the managed standalone path.
@@ -112,7 +112,7 @@ codex-safe-switch              interactive profile picker
 codex-safe-switch ls           list profiles
 codex-safe-switch current      show the current profile
 codex-safe-switch use <name>   switch to a profile
-codex-safe-switch official     switch to official ChatGPT
+codex-safe-switch codex-official     switch to official ChatGPT
 codex-safe-switch save <name>  save the current provider config
 codex-safe-switch show <name>  show profile contents
 codex-safe-switch rm <name>    delete a profile
@@ -124,7 +124,7 @@ codex-safe-switch merge-history
                                repair history metadata
 ```
 
-`use` and `official` accept `--restart-codex`:
+`use` and `codex-official` accept `--restart-codex`:
 
 ```bash
 codex-safe-switch use myrelay --restart-codex
@@ -140,7 +140,7 @@ Profiles live here by default:
 ```text
 ~/.codex/profiles/
 ├── .active
-├── .official/
+├── .codex-official/
 │   └── provider.toml
 └── myrelay/
     └── provider.toml

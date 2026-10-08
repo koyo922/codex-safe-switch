@@ -126,7 +126,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         (self.codex_home / "config.toml").write_text(
             'model = "gpt-5.4"\nmodel_provider = "openai"\npreferred_auth_method = "chatgpt"\n'
         )
-        write_json(self.codex_home / "auth.json", {"auth_mode": "chatgpt", "token": "official"})
+        write_json(self.codex_home / "auth.json", {"auth_mode": "chatgpt", "token": "codex-official"})
 
     def set_current_relay(self) -> None:
         (self.codex_home / "config.toml").write_text(
@@ -285,11 +285,11 @@ class CodexSwitchCliTests(unittest.TestCase):
 
         _code, output = self.run_cli_output("ls")
 
-        self.assertIn("initialized profile from existing Codex config → official", output)
-        self.assertIn("★ official", output)
-        self.assertEqual((self.profile_root / ".active").read_text().strip(), "official")
-        self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
-        provider = (self.profile_root / ".official" / "provider.toml").read_text()
+        self.assertIn("initialized profile from existing Codex config → codex-official", output)
+        self.assertIn("★ codex-official", output)
+        self.assertEqual((self.profile_root / ".active").read_text().strip(), "codex-official")
+        self.assertFalse((self.profile_root / ".codex-official" / "auth.json").exists())
+        provider = (self.profile_root / ".codex-official" / "provider.toml").read_text()
         self.assertIn('model_provider = "openai"', provider)
 
     def test_first_run_ls_imports_official_provider_config_without_auth_json(self) -> None:
@@ -299,20 +299,20 @@ class CodexSwitchCliTests(unittest.TestCase):
 
         _code, output = self.run_cli_output("ls")
 
-        self.assertIn("initialized profile from existing Codex config → official", output)
-        self.assertIn("★ official", output)
-        self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
-        provider = (self.profile_root / ".official" / "provider.toml").read_text()
+        self.assertIn("initialized profile from existing Codex config → codex-official", output)
+        self.assertIn("★ codex-official", output)
+        self.assertFalse((self.profile_root / ".codex-official" / "auth.json").exists())
+        provider = (self.profile_root / ".codex-official" / "provider.toml").read_text()
         self.assertIn('model_provider = "openai"', provider)
 
     def test_save_official_refreshes_hidden_official_snapshot(self) -> None:
         self.set_current_official()
 
-        _code, output = self.run_cli_output("save", "official")
+        _code, output = self.run_cli_output("save", "codex-official")
 
-        self.assertIn("saved → official", output)
-        self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
-        provider = (self.profile_root / ".official" / "provider.toml").read_text()
+        self.assertIn("saved → codex-official", output)
+        self.assertFalse((self.profile_root / ".codex-official" / "auth.json").exists())
+        provider = (self.profile_root / ".codex-official" / "provider.toml").read_text()
         self.assertIn('model_provider = "openai"', provider)
         self.assertIn('preferred_auth_method = "chatgpt"', provider)
 
@@ -325,24 +325,24 @@ class CodexSwitchCliTests(unittest.TestCase):
             redirect_stderr(stderr),
             self.assertRaises(SystemExit) as raised,
         ):
-            cli.main(["save", "official"])
+            cli.main(["save", "codex-official"])
 
         self.assertEqual(raised.exception.code, 1)
         self.assertIn("current config is not the official OpenAI provider", stderr.getvalue())
-        self.assertIn("codex-safe-switch official", stderr.getvalue())
-        self.assertFalse((self.profile_root / ".official").exists())
+        self.assertIn("codex-safe-switch codex-official", stderr.getvalue())
+        self.assertFalse((self.profile_root / ".codex-official").exists())
 
     def test_official_creates_default_snapshot_when_missing(self) -> None:
         self.set_current_relay()
 
-        _code, output = self.run_cli_output("official")
+        _code, output = self.run_cli_output("codex-official")
 
-        self.assertIn("created default official profile → official", output)
-        self.assertIn("switched → official", output)
-        self.assertEqual((self.profile_root / ".active").read_text().strip(), "official")
-        self.assertFalse((self.profile_root / ".official" / "auth.json").exists())
+        self.assertIn("created default official profile → codex-official", output)
+        self.assertIn("switched → codex-official", output)
+        self.assertEqual((self.profile_root / ".active").read_text().strip(), "codex-official")
+        self.assertFalse((self.profile_root / ".codex-official" / "auth.json").exists())
 
-        provider = (self.profile_root / ".official" / "provider.toml").read_text()
+        provider = (self.profile_root / ".codex-official" / "provider.toml").read_text()
         self.assertIn('model_provider = "openai"', provider)
         self.assertIn('preferred_auth_method = "chatgpt"', provider)
         self.assertNotIn("relay.example", provider)
@@ -363,12 +363,12 @@ class CodexSwitchCliTests(unittest.TestCase):
             redirect_stderr(stderr),
             self.assertRaises(SystemExit) as raised,
         ):
-            cli.main(["show", "official"])
+            cli.main(["show", "codex-official"])
 
         self.assertEqual(raised.exception.code, 1)
-        self.assertIn("profile not found: official", stderr.getvalue())
-        self.assertIn("codex-safe-switch official", stderr.getvalue())
-        self.assertIn("codex-safe-switch save official", stderr.getvalue())
+        self.assertIn("profile not found: codex-official", stderr.getvalue())
+        self.assertIn("codex-safe-switch codex-official", stderr.getvalue())
+        self.assertIn("codex-safe-switch save codex-official", stderr.getvalue())
 
     def test_restart_codex_kills_only_matching_codex_processes(self) -> None:
         ps_output = "\n".join([
@@ -431,7 +431,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn('env_key = "RELAY_KEY"', config)
         self.assertEqual(
             json.loads((self.codex_home / "auth.json").read_text()),
-            {"auth_mode": "chatgpt", "token": "official"},
+            {"auth_mode": "chatgpt", "token": "codex-official"},
         )
 
     def test_use_openai_auth_bearer_profile_does_not_warn_about_remote_auth(self) -> None:
@@ -487,7 +487,7 @@ class CodexSwitchCliTests(unittest.TestCase):
 
         self.assertEqual(
             json.loads((self.codex_home / "auth.json").read_text()),
-            {"auth_mode": "chatgpt", "token": "official"},
+            {"auth_mode": "chatgpt", "token": "codex-official"},
         )
 
     def test_restart_codex_warns_when_active_provider_may_drop_remote_auth(self) -> None:
@@ -546,7 +546,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertEqual(stderr, "codex-safe-switch: interrupted\n")
 
-    def test_use_openai_alias_restores_official_snapshot_and_merges_history(self) -> None:
+    def test_use_canonical_official_profile_restores_snapshot_and_merges_history(self) -> None:
         self.set_current_official()
         self.snapshot_official()
 
@@ -570,15 +570,15 @@ class CodexSwitchCliTests(unittest.TestCase):
         write_rollout(self.codex_home / "sessions" / "2026" / "05" / "test.jsonl", "relay", model="gpt-5.5")
         write_threads_db(self.codex_home / "state_5.sqlite", "relay", model="gpt-5.5")
 
-        self.run_cli("use", "openai")
+        self.run_cli("use", "codex-official")
 
         config = self.read_config()
         self.assertIn('model_provider = "openai"', config)
         self.assertEqual(
             json.loads((self.codex_home / "auth.json").read_text()),
-            {"auth_mode": "chatgpt", "token": "official"},
+            {"auth_mode": "chatgpt", "token": "codex-official"},
         )
-        self.assertEqual((self.profile_root / ".active").read_text().strip(), "official")
+        self.assertEqual((self.profile_root / ".active").read_text().strip(), "codex-official")
         rollout = (self.codex_home / "sessions" / "2026" / "05" / "test.jsonl").read_text()
         self.assertIn('"model_provider":"openai"', rollout)
         self.assertIn('"model":"gpt-5.4"', rollout)
@@ -623,7 +623,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.assertIn("model_context_window = 272000", relay_config)
         self.assertIn("model_auto_compact_token_limit = 272000", relay_config)
 
-        self.run_cli("official")
+        self.run_cli("codex-official")
         official_config = self.read_config()
         self.assertIn("model_context_window = 272000", official_config)
         self.assertIn("model_auto_compact_token_limit = 272000", official_config)
@@ -652,7 +652,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         relay_config = self.read_config()
         self.assertIn('model_catalog_json = "/tmp/deepseek-models.json"', relay_config)
 
-        self.run_cli("official")
+        self.run_cli("codex-official")
         official_config = self.read_config()
         self.assertNotIn("model_catalog_json", official_config)
 
@@ -723,7 +723,7 @@ class CodexSwitchCliTests(unittest.TestCase):
         self.run_cli("use", "relay")
         self.assertIn('NODE_OPTIONS = "--use-env-proxy"', self.read_config())
 
-        self.run_cli("official")
+        self.run_cli("codex-official")
         self.assertIn('NODE_OPTIONS = "--use-env-proxy"', self.read_config())
 
     def test_merge_history_keep_models_preserves_existing_thread_models(self) -> None:
@@ -775,13 +775,13 @@ class CodexSwitchCliTests(unittest.TestCase):
     def test_doctor_history_prints_current_state_and_drift(self) -> None:
         self.set_current_official()
         self.snapshot_official()
-        (self.profile_root / ".active").write_text("official\n")
+        (self.profile_root / ".active").write_text("codex-official\n")
         write_threads_db(self.codex_home / "state_5.sqlite", "relay", model="gpt-5.5")
 
         _code, output = self.run_cli_output("doctor-history")
 
         self.assertIn("history doctor", output)
-        self.assertIn("current profile → official", output)
+        self.assertIn("current profile → codex-official", output)
         self.assertIn("current config → provider=openai model=gpt-5.4", output)
         self.assertIn("session state → shared", output)
         self.assertIn("threads provider/model distribution:", output)
